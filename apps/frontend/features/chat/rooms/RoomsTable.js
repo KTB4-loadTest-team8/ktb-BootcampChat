@@ -4,6 +4,8 @@ import { Button, Text, VStack, HStack } from '@vapor-ui/core';
 import * as Table from '@/components/Table';
 import { CONNECTION_STATUS } from './useServerConnection';
 
+export const ROOMS_TABLE_HEIGHT = 430;
+
 const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
   if (!rooms || rooms.length === 0) return null;
 
@@ -11,7 +13,7 @@ const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
     <div
       className="chat-rooms-table"
       style={{
-        height: '430px',
+        height: `${ROOMS_TABLE_HEIGHT}px`,
         overflowY: 'auto',
         position: 'relative',
         borderRadius: '0.5rem',

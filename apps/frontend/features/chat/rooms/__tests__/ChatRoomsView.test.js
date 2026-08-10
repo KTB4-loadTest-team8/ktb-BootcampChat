@@ -144,4 +144,10 @@ describe('ChatRoomsView', () => {
 
     expect(screen.queryByTestId('refresh-rooms-button')).toBeNull();
   });
+
+  it('reserves the room list height before room data arrives', () => {
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    expect(screen.getByTestId('rooms-list-surface').style.minHeight).toBe('430px');
+  });
 });
