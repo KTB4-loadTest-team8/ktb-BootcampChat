@@ -3,13 +3,18 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.ktb.chatapp.dto.FileResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.dto.UserResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.service.FileUrl;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -33,6 +38,32 @@ public class MessageResponseMapper {
      * @return MessageResponse DTO
      */
     public MessageResponse mapToMessageResponse(Message message, User sender) {
+        File file = Optional.ofNullable(message.getFileId())
+                .flatMap(fileRepository::findById)
+                .orElse(null);
+        return mapToMessageResponse(message, sender, file);
+    }
+
+    public List<MessageResponse> mapToMessageResponses(
+            List<Message> messages,
+            Map<String, User> usersById
+    ) {
+        Map<String, File> filesById = findFilesById(messages);
+
+        return messages.stream()
+                .map(message -> {
+                    String senderId = message.getSenderId();
+                    String fileId = message.getFileId();
+                    return mapToMessageResponse(
+                            message,
+                            senderId == null ? null : usersById.get(senderId),
+                            fileId == null ? null : filesById.get(fileId)
+                    );
+                })
+                .toList();
+    }
+
+    private MessageResponse mapToMessageResponse(Message message, User sender, File file) {
         MessageResponse.MessageResponseBuilder builder = MessageResponse.builder()
                 .id(message.getId())
                 .content(message.getContent())
@@ -55,16 +86,15 @@ public class MessageResponseMapper {
         }
 
         // 파일 정보 설정
-        Optional.ofNullable(message.getFileId())
-                .flatMap(fileRepository::findById)
-                .map(file -> FileResponse.builder()
-                        .id(file.getId())
-                        .filename(file.getFilename())
-                        .originalname(file.getOriginalname())
-                        .mimetype(file.getMimetype())
-                        .size(file.getSize())
-                        .build())
-                .ifPresent(builder::file);
+        if (file != null) {
+            builder.file(FileResponse.builder()
+                    .id(file.getId())
+                    .filename(file.getFilename())
+                    .originalname(file.getOriginalname())
+                    .mimetype(file.getMimetype())
+                    .size(file.getSize())
+                    .build());
+        }
 
         // 메타데이터 설정
         if (message.getMetadata() != null) {
@@ -72,5 +102,21 @@ public class MessageResponseMapper {
         }
 
         return builder.build();
+    }
+
+    private Map<String, File> findFilesById(List<Message> messages) {
+        Set<String> fileIds = messages.stream()
+                .map(Message::getFileId)
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        if (fileIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, File> filesById = new HashMap<>();
+        fileRepository.findAllById(fileIds)
+                .forEach(file -> filesById.put(file.getId(), file));
+        return filesById;
     }
 }

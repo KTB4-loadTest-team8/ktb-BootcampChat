@@ -3,6 +3,9 @@ package com.ktb.chatapp.service;
 import com.ktb.chatapp.repository.MessageRepository;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -20,5 +23,19 @@ public class RecentMessageCounter {
     public int countRecentMessages(String roomId) {
         LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
         return (int) messageRepository.countRecentMessagesByRoomId(roomId, since);
+    }
+
+    public Map<String, Integer> countRecentMessages(Collection<String> roomIds) {
+        if (roomIds.isEmpty()) {
+            return Map.of();
+        }
+
+        LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
+        return messageRepository.countRecentMessagesByRoomIds(roomIds, since).stream()
+                .collect(Collectors.toMap(
+                        room -> room.getRoomId(),
+                        room -> Math.toIntExact(room.getCount()),
+                        Integer::sum
+                ));
     }
 }

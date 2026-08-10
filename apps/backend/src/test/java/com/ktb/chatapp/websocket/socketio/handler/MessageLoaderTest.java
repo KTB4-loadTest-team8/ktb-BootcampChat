@@ -2,6 +2,7 @@ package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
+import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
@@ -22,6 +23,7 @@ import org.springframework.data.domain.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,11 +104,11 @@ class MessageLoaderTest {
         
         // DB는 DESC 정렬로 반환한다고 가정 (최신 것 먼저)
         // [21시간 전, 22시간 전, ..., 50시간 전]
-        var messagePage = getMessagePage(first30Messages);
+        var messageSlice = getMessageSlice(first30Messages, true);
         
         when(messageRepository.findByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
-                .thenReturn(messagePage);
+                .thenReturn(messageSlice);
         
         // When: 메시지 로드
         FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
@@ -115,18 +117,59 @@ class MessageLoaderTest {
         // Then: 결과는 오름차순으로 정렬되어야 함
         assertThat(result.getMessages()).hasSize(30);
         assertThat(result.isHasMore()).isTrue();
+        verify(userRepository).findAllById(Set.of(userId));
+        verify(userRepository, never()).findById(anyString());
+        verify(fileRepository, never()).findById(anyString());
         
         // 시간순 정렬 확인 (오름차순: 오래된 것 → 최신 것)
         // [50시간 전, 49시간 전, ..., 21시간 전]
         verifyAscending(result);
     }
+
+    @Test
+    @DisplayName("loadMessages: 발신자와 파일 정보를 각각 한 번의 일괄 조회로 가져온다")
+    void loadMessages_shouldBatchFetchSendersAndFiles() {
+        List<Message> messages = new ArrayList<>(testMessages.subList(0, 3));
+        messages.get(0).setSenderId("sender-1");
+        messages.get(1).setSenderId("sender-2");
+        messages.get(2).setSenderId("sender-1");
+        messages.get(0).setFileId("file-1");
+        messages.get(1).setFileId("file-2");
+        messages.get(2).setFileId("file-1");
+
+        User sender1 = User.builder().id("sender-1").name("Sender 1").build();
+        User sender2 = User.builder().id("sender-2").name("Sender 2").build();
+        File file1 = File.builder().id("file-1").filename("first.png").build();
+        File file2 = File.builder().id("file-2").filename("second.png").build();
+
+        when(messageRepository.findByRoomIdAndTimestampBefore(
+                eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
+                .thenReturn(getMessageSlice(messages, false));
+        when(userRepository.findAllById(Set.of("sender-1", "sender-2")))
+                .thenReturn(List.of(sender1, sender2));
+        when(fileRepository.findAllById(Set.of("file-1", "file-2")))
+                .thenReturn(List.of(file1, file2));
+
+        FetchMessagesResponse result = messageLoader.loadMessages(
+                new FetchMessagesRequest(roomId, 30, null), userId);
+
+        assertThat(result.getMessages()).hasSize(3);
+        assertThat(result.getMessages()).allSatisfy(message ->
+                assertThat(message.getFile()).isNotNull());
+        verify(userRepository).findAllById(Set.of("sender-1", "sender-2"));
+        verify(fileRepository).findAllById(Set.of("file-1", "file-2"));
+        verify(userRepository, never()).findById(anyString());
+        verify(fileRepository, never()).findById(anyString());
+    }
     
-    private static @NotNull Page<Message> getMessagePage(List<Message> first30Messages) {
-        List<Message> messages = new ArrayList<>(first30Messages.reversed());
+    private static @NotNull Slice<Message> getMessageSlice(
+            List<Message> messages,
+            boolean hasMore
+    ) {
+        List<Message> descendingMessages = new ArrayList<>(messages.reversed());
         
         Pageable pageable = PageRequest.of(0, 30, Sort.by("timestamp").descending());
-        Page<Message> messagePage = new PageImpl<>(messages, pageable, 50);
-        return messagePage;
+        return new SliceImpl<>(descendingMessages, pageable, hasMore);
     }
     
     @Test
@@ -137,11 +180,11 @@ class MessageLoaderTest {
         
         // DB는 DESC 정렬로 반환 (최신 것부터)
         // [1시간 전, 2시간 전, ..., 30시간 전]
-        Page<Message> messagePage = getMessagePage(last30Messages);
+        Slice<Message> messageSlice = getMessageSlice(last30Messages, false);
         
         when(messageRepository.findByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
-                .thenReturn(messagePage);
+                .thenReturn(messageSlice);
         
         // When: 초기 메시지 로드
         FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
