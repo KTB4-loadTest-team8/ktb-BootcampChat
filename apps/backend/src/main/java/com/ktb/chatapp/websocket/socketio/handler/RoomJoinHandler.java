@@ -10,6 +10,7 @@ import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
+import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
@@ -102,14 +103,7 @@ public class RoomJoinHandler {
                 return;
             }
 
-            // 참가자 정보 조회
-            List<UserResponse> participants = roomOpt.get().getParticipantIds()
-                    .stream()
-                    .map(userRepository::findById)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .map(UserResponse::from)
-                    .toList();
+            List<UserResponse> participants = getParticipantResponses(roomOpt.get());
             
             JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
                 .roomId(roomId)
@@ -152,5 +146,21 @@ public class RoomJoinHandler {
     private String getUserName(SocketIOClient client) {
         SocketUser user = getUser(client);
         return user != null ? user.name() : null;
+    }
+
+    private List<UserResponse> getParticipantResponses(Room room) {
+        if (room.getParticipantIds() == null || room.getParticipantIds().isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, User> usersById = new HashMap<>();
+        userRepository.findAllById(room.getParticipantIds())
+                .forEach(user -> usersById.put(user.getId(), user));
+
+        return room.getParticipantIds().stream()
+                .map(usersById::get)
+                .filter(Objects::nonNull)
+                .map(UserResponse::from)
+                .toList();
     }
 }

@@ -32,6 +32,7 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.PARTICIPANTS_UPD
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -76,7 +77,8 @@ class RoomJoinHandlerTest {
     void handleJoinRoom_addsParticipantLoadsMessagesAndBroadcasts() {
         SocketUser socketUser = new SocketUser("user-1", "tester", "session-1", "socket-1");
         User user = User.builder().id("user-1").name("tester").email("tester@example.com").build();
-        Room room = Room.builder().id("room-1").name("room").participantIds(Set.of("user-1")).build();
+        User participant = User.builder().id("user-2").name("participant").email("participant@example.com").build();
+        Room room = Room.builder().id("room-1").name("room").participantIds(Set.of("user-1", "user-2")).build();
         MessageResponse joinMessageResponse = MessageResponse.builder()
                 .id("message-1")
                 .roomId("room-1")
@@ -91,6 +93,7 @@ class RoomJoinHandlerTest {
 
         when(client.get("user")).thenReturn(socketUser);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(userRepository.findAllById(Set.of("user-1", "user-2"))).thenReturn(List.of(user, participant));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(false);
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
@@ -113,5 +116,7 @@ class RoomJoinHandlerTest {
         verify(client).sendEvent(eq(JOIN_ROOM_SUCCESS), any());
         verify(roomOperations).sendEvent(MESSAGE, joinMessageResponse);
         verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), any());
+        verify(userRepository).findAllById(Set.of("user-1", "user-2"));
+        verify(userRepository, never()).findById("user-2");
     }
 }
