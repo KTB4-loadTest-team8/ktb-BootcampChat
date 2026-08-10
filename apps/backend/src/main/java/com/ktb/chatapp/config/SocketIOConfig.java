@@ -7,6 +7,7 @@ import com.corundumstudio.socketio.annotation.SpringAnnotationScanner;
 import com.corundumstudio.socketio.namespace.Namespace;
 import com.corundumstudio.socketio.protocol.JacksonJsonSupport;
 import com.corundumstudio.socketio.store.MemoryStoreFactory;
+import com.corundumstudio.socketio.store.RedissonStoreFactory;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ktb.chatapp.websocket.socketio.ChatDataStore;
 import com.ktb.chatapp.websocket.socketio.LocalChatDataStore;
@@ -20,6 +21,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.context.annotation.Role;
+import org.springframework.util.StringUtils;
+import org.redisson.Redisson;
+import org.redisson.api.RedissonClient;
+import org.redisson.config.Config;
 
 import static org.springframework.beans.factory.config.BeanDefinition.ROLE_INFRASTRUCTURE;
 
@@ -37,8 +42,42 @@ public class SocketIOConfig {
     @Value("${socketio.server.origin:*}")
     private String origin;
 
+    @Value("${socketio.redis.enabled:false}")
+    private boolean redisStoreEnabled;
+
+    @Value("${spring.data.redis.host:localhost}")
+    private String redisHost;
+
+    @Value("${spring.data.redis.port:6379}")
+    private int redisPort;
+
+    @Value("${spring.data.redis.password:}")
+    private String redisPassword;
+
+    /**
+     * Socket.IO nodes share rooms and broadcasts through this Redisson client when enabled.
+     * The StoreFactory owns its lifecycle, so it is intentionally not destroyed separately.
+     */
+    @Bean(destroyMethod = "")
+    @ConditionalOnProperty(name = "socketio.redis.enabled", havingValue = "true")
+    public RedissonClient socketIORedissonClient() {
+        Config config = new Config();
+        var singleServer = config.useSingleServer()
+                .setAddress("redis://" + redisHost + ":" + redisPort);
+
+        if (StringUtils.hasText(redisPassword)) {
+            singleServer.setPassword(redisPassword);
+        }
+
+        return Redisson.create(config);
+    }
+
     @Bean(initMethod = "start", destroyMethod = "stop")
-    public SocketIOServer socketIOServer(AuthTokenListener authTokenListener, MeterRegistry meterRegistry) {
+    public SocketIOServer socketIOServer(
+            AuthTokenListener authTokenListener,
+            MeterRegistry meterRegistry,
+            org.springframework.beans.factory.ObjectProvider<RedissonClient> redissonClientProvider
+    ) {
         com.corundumstudio.socketio.Configuration config = new com.corundumstudio.socketio.Configuration();
         config.setHostname(host);
         config.setPort(port);
@@ -47,7 +86,7 @@ public class SocketIOConfig {
         socketConfig.setReuseAddress(true);
         socketConfig.setTcpNoDelay(false);
         socketConfig.setAcceptBackLog(10);
-        socketConfig.setTcpSendBufferSize(4096);
+        socketConfig.setTcpSendBufferSize(4096);    //나중에 수정
         socketConfig.setTcpReceiveBufferSize(4096);
         config.setSocketConfig(socketConfig);
 
@@ -59,7 +98,14 @@ public class SocketIOConfig {
         config.setUpgradeTimeout(10000);
 
         config.setJsonSupport(new JacksonJsonSupport(new JavaTimeModule()));
-        config.setStoreFactory(new MemoryStoreFactory()); // 단일노드 전용
+        RedissonClient redissonClient = redissonClientProvider.getIfAvailable();
+        if (redisStoreEnabled && redissonClient != null) {
+            config.setStoreFactory(new RedissonStoreFactory(redissonClient));
+            log.info("Socket.IO Redis store enabled at {}:{}", redisHost, redisPort);
+        } else {
+            config.setStoreFactory(new MemoryStoreFactory());
+            log.warn("Socket.IO is using an in-memory store; cross-node broadcasts are disabled");
+        }
 
         log.info("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
                  host, port, config.getBossThreads(), config.getWorkerThreads());
