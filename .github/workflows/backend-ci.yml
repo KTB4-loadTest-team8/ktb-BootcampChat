@@ -2,10 +2,13 @@ name: Backend CI
 
 # apps/backend가 바뀐 PR/브랜치에서만 돈다 (모노레포라 프론트 변경엔 반응 안 함).
 on:
+  workflow_dispatch: {}
+
   pull_request:
     paths:
       - "apps/backend/**"
       - ".github/workflows/backend-ci.yml"
+
   push:
     branches-ignore:
       - main
