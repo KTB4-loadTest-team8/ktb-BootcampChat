@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.template
+
+# Build and test output
+.next/
+target/
+dist/
+build/
+out/
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+playwright/.auth/
+
+# Load-test results
+e2e/artillery/result-*.json
+
+# Maven wrapper cache/binary
+**/.mvn/wrapper/maven-wrapper.jar
+
+# IDE and OS files
+.idea/
+*.iml
+.classpath
+.project
+.factorypath
+.settings/
+.DS_Store
+
+# Logs and local runtime files
+*.log
+*.pid
+*.pid.lock
