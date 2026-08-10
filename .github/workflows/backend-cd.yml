@@ -1,0 +1,149 @@
+name: Backend CD
+
+# GitHub 호스팅 러너만 사용. backend EC2가 전부 public subnet + ALB 로드밸런싱
+# 구조라, GitHub 호스팅 러너가 각 EC2에 직접 SSH로 붙어 배포한다(push 기반).
+# 이미지 태그는 latest를 쓰지 않고 커밋 해시(github.sha)를 그대로 쓴다 —
+# 그래서 각 서버에 "이번엔 정확히 이 SHA로 떠라"를 CI가 명시적으로 지시하고,
+# Watchtower 같은 자동 폴링 도구는 쓰지 않는다(고정 태그가 없어서 감시 대상이
+# 없기 때문).
+#
+# ⚠️ 사전 준비
+# 1. GitHub Secrets:
+#    - DOCKERHUB_USERNAME, DOCKERHUB_TOKEN : Docker Hub 로그인/푸시용
+#    - DEPLOY_SSH_KEY  : 배포용 프라이빗 키
+#    - DEPLOY_USER     : 접속 계정 (기본 ubuntu)
+#    - DEPLOY_HOSTS    : 공백으로 구분한 backend EC2 public IP 목록
+# 2. EC2 보안그룹: 22번 포트를 GitHub Actions 러너에서 접근 가능하게 열어야
+#    함(관리자 IP만으로는 GitHub 호스팅 러너의 유동 IP를 못 맞춤). 키 인증은
+#    그대로 걸려 있으니 포트를 넓게 열더라도 키 없이는 접속 불가.
+# 3. 각 backend EC2에 미리 준비돼 있어야 하는 것 (컨테이너 자체는 CD가
+#    최초 실행 때 알아서 만드므로 수동 docker run은 불필요 — docker
+#    stop/rm에 `|| true`가 붙어있어 컨테이너가 없어도 실패하지 않는다):
+#      - Docker 설치 및 실행 중 (OS 레벨 설정, CD가 대신 해주지 않음)
+#      - /home/ubuntu/ktb-chat-backend/.env 파일 (.env.production.example
+#        기반으로 실제 값 채워서 미리 생성 — CI/CD가 만들지 않음)
+#      - DEPLOY_SSH_KEY의 공개키가 DEPLOY_USER 계정의
+#        ~/.ssh/authorized_keys에 등록돼 있을 것
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/backend/**"
+  workflow_dispatch: {}
+
+concurrency:
+  group: backend-cd
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/ktb-chat-backend
+  TAG: ${{ github.sha }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # make build-jar-with-tests와 동일: 프로필 없이 전체 테스트(단위+통합).
+      - name: Full test suite
+        run: ./mvnw -B clean test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # latest 태그는 만들지 않는다 — 이번 커밋의 SHA 하나만 태깅.
+      - uses: docker/build-push-action@v6
+        with:
+          context: apps/backend
+          push: true
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Rolling deploy (한 대씩 → 헬스체크 통과 후 다음 서버)
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOSTS: ${{ secrets.DEPLOY_HOSTS }}
+          ENV_FILE_PATH: /home/ubuntu/ktb-chat-backend/.env
+        run: |
+          set -euo pipefail
+          for host in $DEPLOY_HOSTS; do
+            echo "::group::Deploying $IMAGE:$TAG to $host"
+            target="$DEPLOY_USER@$host"
+            ssh_cmd="ssh -i ~/.ssh/deploy_key $target"
+
+            $ssh_cmd "docker pull $IMAGE:$TAG"
+
+            # 기존 컨테이너 정리 (없어도 실패로 취급하지 않음)
+            $ssh_cmd "docker stop ktb-chat-backend >/dev/null 2>&1 || true"
+            $ssh_cmd "docker rm ktb-chat-backend >/dev/null 2>&1 || true"
+
+            $ssh_cmd "docker run -d --name ktb-chat-backend --restart unless-stopped \
+              -p 5001:5001 -p 5002:5002 \
+              --env-file $ENV_FILE_PATH \
+              $IMAGE:$TAG"
+
+            # 최대 60초(2초 간격) 헬스체크 — app-control.sh의 wait_for_health와 동일한 타임아웃
+            $ssh_cmd "for i in \$(seq 1 30); do \
+                curl -sf http://localhost:5001/api/health > /dev/null 2>&1 && exit 0; \
+                sleep 2; \
+              done; \
+              echo 'health check timed out'; exit 1"
+
+            echo "✅ $host healthy"
+            echo "::endgroup::"
+          done
+
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
+
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check ALB health endpoint
+        env:
+          HEALTH_URL: ${{ vars.BACKEND_HEALTH_URL }} # 예: https://chat.yourdomain.com/actuator/health
+        run: |
+          if [ -z "$HEALTH_URL" ]; then
+            echo "BACKEND_HEALTH_URL repository variable이 없어 스모크 테스트를 건너뜁니다."
+            exit 0
+          fi
+          curl -sf "$HEALTH_URL" | tee /dev/stderr | grep -q '"status":"UP"'
