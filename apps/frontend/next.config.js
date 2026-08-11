@@ -23,6 +23,7 @@ const nextConfig = {
   },
   // Docker 빌드를 위한 standalone 출력 모드 (개발 환경에는 영향 없음)
   output: 'standalone',
+  deploymentId: process.env.DEPLOYMENT_ID,
   // monorepo에서 standalone 빌드 시 중첩 경로 방지
   outputFileTracingRoot: workspaceRoot
 };
