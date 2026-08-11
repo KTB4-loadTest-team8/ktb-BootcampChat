@@ -8,7 +8,6 @@ import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
@@ -17,7 +16,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -29,31 +27,22 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class RoomService {
 
-    static final String ROOMS_CACHE = "rooms:v2";
+    static final String ROOMS_CACHE = RoomListSnapshotService.ROOMS_CACHE;
 
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RecentMessageCounter recentMessageCounter;
+    private final RoomListSnapshotService roomListSnapshotService;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
-    @Cacheable(cacheNames = ROOMS_CACHE, key = "#name", sync = true)
     public RoomsResponse getAllRooms(String name) {
 
         try {
-            // API 응답은 유지하고, 방별 사용자/최근 메시지 조회만 일괄 처리한다.
-            List<Room> rooms = roomRepository.findAll();
-            Map<String, User> usersById = findUsersByRoomIds(rooms);
-            Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(
-                    rooms.stream().map(Room::getId).toList()
-            );
-
-            List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById, recentMessageCounts))
-                .sorted(Comparator.comparing(
-                    RoomResponse::getCreatedAtDateTime,
-                    Comparator.nullsLast(Comparator.reverseOrder())))
-                .collect(Collectors.toList());
+            // MongoDB 집계 결과는 전체 사용자에게 공통이다. 사용자별 값만 복사해서 적용한다.
+            List<RoomResponse> roomResponses = roomListSnapshotService.getRoomSnapshots().stream()
+                .map(room -> copyForUser(room, name))
+                .toList();
 
             PageMetadata metadata = PageMetadata.builder()
                 .total(roomResponses.size())
@@ -251,6 +240,20 @@ public class RoomService {
                 )
             .isCreator(creator != null && creator.getId().equals(name))
             .recentMessageCount(recentMessageCount)
+            .build();
+    }
+
+    private RoomResponse copyForUser(RoomResponse snapshot, String name) {
+        return RoomResponse.builder()
+            .id(snapshot.getId())
+            .name(snapshot.getName())
+            .hasPassword(snapshot.isHasPassword())
+            .creator(snapshot.getCreator())
+            .participants(snapshot.getParticipants())
+            .createdAtDateTime(snapshot.getCreatedAtDateTime())
+            // 기존 isCreator 비교 규칙을 유지해 API 동작을 바꾸지 않는다.
+            .isCreator(snapshot.getCreator() != null && snapshot.getCreator().getId().equals(name))
+            .recentMessageCount(snapshot.getRecentMessageCount())
             .build();
     }
 
