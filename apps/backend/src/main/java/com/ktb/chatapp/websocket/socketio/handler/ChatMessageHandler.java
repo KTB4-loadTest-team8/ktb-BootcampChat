@@ -111,7 +111,7 @@ public class ChatMessageHandler {
         }
         
         try {
-            User sender = userRepository.findById(socketUser.id()).orElse(null);
+            User sender = userRepository.findMessageSenderById(socketUser.id()).orElse(null);
             if (sender == null) {
                 recordError("user_not_found");
                 client.sendEvent(ERROR, Map.of(
@@ -123,7 +123,7 @@ public class ChatMessageHandler {
             }
 
             String roomId = data.getRoom();
-            Room room = roomRepository.findById(roomId).orElse(null);
+            Room room = roomRepository.findRoomForReadById(roomId).orElse(null);
             if (room == null || !room.getParticipantIds().contains(socketUser.id())) {
                 recordError("room_access_denied");
                 client.sendEvent(ERROR, Map.of(

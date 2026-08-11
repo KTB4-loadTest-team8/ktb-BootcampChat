@@ -25,6 +25,24 @@ public final class BoundedExecutorMetrics {
             String executorName,
             MeterRegistry meterRegistry
     ) {
+        configure(executor, executorName, meterRegistry, true);
+    }
+
+    /**
+     * Configure metrics and choose how saturation is handled.
+     *
+     * <p>Caller-runs is useful for small, non-critical tasks because it applies
+     * backpressure. It must not be used for tasks submitted by a Socket.IO event
+     * thread, however, because a saturated queue would execute the whole task on
+     * that event thread. Those executors use {@code callerRuns=false} and are
+     * wrapped by {@link NonBlockingTaskExecutor}.</p>
+     */
+    public static void configure(
+            ThreadPoolTaskExecutor executor,
+            String executorName,
+            MeterRegistry meterRegistry,
+            boolean callerRuns
+    ) {
         Timer queueWaitTimer = Timer.builder("chat.executor.queue.wait")
                 .description("Bounded executor queue wait time")
                 .tag("executor", executorName)
@@ -56,10 +74,9 @@ public final class BoundedExecutorMetrics {
                 }
             };
         });
-        executor.setRejectedExecutionHandler(new MetricsCallerRunsPolicy(
-                rejectedCounter,
-                callerRunsCounter
-        ));
+        executor.setRejectedExecutionHandler(callerRuns
+                ? new MetricsCallerRunsPolicy(rejectedCounter, callerRunsCounter)
+                : new MetricsAbortPolicy(rejectedCounter));
         executor.initialize();
 
         ThreadPoolExecutor delegate = executor.getThreadPoolExecutor();
@@ -114,6 +131,24 @@ public final class BoundedExecutorMetrics {
             if (!executor.isShutdown()) {
                 callerRunsCounter.increment();
             }
+            delegate.rejectedExecution(task, executor);
+        }
+    }
+
+    private static final class MetricsAbortPolicy
+            implements java.util.concurrent.RejectedExecutionHandler {
+
+        private final Counter rejectedCounter;
+        private final java.util.concurrent.RejectedExecutionHandler delegate =
+                new ThreadPoolExecutor.AbortPolicy();
+
+        private MetricsAbortPolicy(Counter rejectedCounter) {
+            this.rejectedCounter = rejectedCounter;
+        }
+
+        @Override
+        public void rejectedExecution(Runnable task, ThreadPoolExecutor executor) {
+            rejectedCounter.increment();
             delegate.rejectedExecution(task, executor);
         }
     }

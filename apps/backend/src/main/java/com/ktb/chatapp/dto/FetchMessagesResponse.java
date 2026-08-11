@@ -12,6 +12,7 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class FetchMessagesResponse {
+    private String roomId;
     private List<MessageResponse> messages;
     private boolean hasMore;
     

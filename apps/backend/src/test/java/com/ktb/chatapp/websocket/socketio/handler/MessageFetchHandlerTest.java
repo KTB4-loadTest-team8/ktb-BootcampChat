@@ -52,6 +52,7 @@ class MessageFetchHandlerTest {
     void handleFetchMessages_loadsMessagesForParticipant() {
         FetchMessagesRequest request = new FetchMessagesRequest("room-1", 30, null);
         FetchMessagesResponse response = FetchMessagesResponse.builder()
+                .roomId("room-1")
                 .messages(List.of())
                 .hasMore(false)
                 .build();

@@ -41,54 +41,88 @@ public class MessageReadStatusAsyncConfig {
         return executor;
     }
 
-    @Bean(name = "chatRoomInitialLoadTaskExecutor")
-    public Executor chatRoomInitialLoadTaskExecutor(
-            @Value("${chat.chat-room-initial-load.executor.core-pool-size:2}") int corePoolSize,
-            @Value("${chat.chat-room-initial-load.executor.max-pool-size:4}") int maxPoolSize,
-            @Value("${chat.chat-room-initial-load.executor.queue-capacity:100}") int queueCapacity
+    @Bean(name = "chatRoomInitialLoadTaskExecutor", destroyMethod = "close")
+    public NonBlockingTaskExecutor chatRoomInitialLoadTaskExecutor(
+            @Value("${chat.chat-room-initial-load.executor.core-pool-size:8}") int corePoolSize,
+            @Value("${chat.chat-room-initial-load.executor.max-pool-size:16}") int maxPoolSize,
+            @Value("${chat.chat-room-initial-load.executor.queue-capacity:200}") int queueCapacity
     ) {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(corePoolSize);
-        executor.setMaxPoolSize(maxPoolSize);
-        executor.setQueueCapacity(queueCapacity);
-        executor.setThreadNamePrefix("chat-room-load-");
-        executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(10);
-        BoundedExecutorMetrics.configure(executor, "chat-room-initial-load", meterRegistry);
-        return executor;
+        return nonBlockingExecutor(
+                corePoolSize,
+                maxPoolSize,
+                queueCapacity,
+                "chat-room-load-",
+                "chat-room-initial-load"
+        );
     }
 
-    @Bean(name = "chatRoomPostJoinTaskExecutor")
-    public Executor chatRoomPostJoinTaskExecutor(
-            @Value("${chat.room-join-post-process.executor.core-pool-size:1}") int corePoolSize,
-            @Value("${chat.room-join-post-process.executor.max-pool-size:2}") int maxPoolSize,
-            @Value("${chat.room-join-post-process.executor.queue-capacity:100}") int queueCapacity
+    @Bean(name = "chatRoomPostJoinTaskExecutor", destroyMethod = "close")
+    public NonBlockingTaskExecutor chatRoomPostJoinTaskExecutor(
+            @Value("${chat.room-join-post-process.executor.core-pool-size:4}") int corePoolSize,
+            @Value("${chat.room-join-post-process.executor.max-pool-size:8}") int maxPoolSize,
+            @Value("${chat.room-join-post-process.executor.queue-capacity:200}") int queueCapacity
     ) {
-        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(corePoolSize);
-        executor.setMaxPoolSize(maxPoolSize);
-        executor.setQueueCapacity(queueCapacity);
-        executor.setThreadNamePrefix("chat-room-post-join-");
-        executor.setWaitForTasksToCompleteOnShutdown(true);
-        executor.setAwaitTerminationSeconds(10);
-        BoundedExecutorMetrics.configure(executor, "chat-room-post-join", meterRegistry);
-        return executor;
+        return nonBlockingExecutor(
+                corePoolSize,
+                maxPoolSize,
+                queueCapacity,
+                "chat-room-post-join-",
+                "chat-room-post-join"
+        );
     }
 
-    @Bean(name = "chatMessageSideEffectTaskExecutor")
-    public Executor chatMessageSideEffectTaskExecutor(
+    @Bean(name = "chatMessageSideEffectTaskExecutor", destroyMethod = "close")
+    public NonBlockingTaskExecutor chatMessageSideEffectTaskExecutor(
             @Value("${chat.chat-message-side-effect.executor.core-pool-size:2}") int corePoolSize,
             @Value("${chat.chat-message-side-effect.executor.max-pool-size:4}") int maxPoolSize,
             @Value("${chat.chat-message-side-effect.executor.queue-capacity:100}") int queueCapacity
     ) {
+        return nonBlockingExecutor(
+                corePoolSize,
+                maxPoolSize,
+                queueCapacity,
+                "chat-message-side-effect-",
+                "chat-message-side-effect"
+        );
+    }
+
+    private NonBlockingTaskExecutor nonBlockingExecutor(
+            int corePoolSize,
+            int maxPoolSize,
+            int queueCapacity,
+            String threadNamePrefix,
+            String metricName
+    ) {
+        ThreadPoolTaskExecutor primary = createExecutor(
+                corePoolSize,
+                maxPoolSize,
+                queueCapacity,
+                threadNamePrefix
+        );
+        ThreadPoolTaskExecutor overflow = createExecutor(
+                maxPoolSize,
+                maxPoolSize,
+                Math.max(queueCapacity, queueCapacity * 2),
+                threadNamePrefix + "overflow-"
+        );
+        BoundedExecutorMetrics.configure(primary, metricName, meterRegistry, false);
+        BoundedExecutorMetrics.configure(overflow, metricName + "-overflow", meterRegistry, false);
+        return new NonBlockingTaskExecutor(primary, overflow);
+    }
+
+    private ThreadPoolTaskExecutor createExecutor(
+            int corePoolSize,
+            int maxPoolSize,
+            int queueCapacity,
+            String threadNamePrefix
+    ) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(corePoolSize);
         executor.setMaxPoolSize(maxPoolSize);
         executor.setQueueCapacity(queueCapacity);
-        executor.setThreadNamePrefix("chat-message-side-effect-");
+        executor.setThreadNamePrefix(threadNamePrefix);
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(10);
-        BoundedExecutorMetrics.configure(executor, "chat-message-side-effect", meterRegistry);
         return executor;
     }
 }

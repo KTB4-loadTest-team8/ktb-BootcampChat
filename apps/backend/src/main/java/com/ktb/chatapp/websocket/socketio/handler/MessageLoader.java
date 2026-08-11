@@ -49,6 +49,7 @@ public class MessageLoader {
         } catch (Exception e) {
             log.error("Error loading initial messages for room {}", data.roomId(), e);
             return FetchMessagesResponse.builder()
+                    .roomId(data.roomId())
                     .messages(emptyList())
                     .hasMore(false)
                     .build();
@@ -107,6 +108,7 @@ public class MessageLoader {
                 roomId, limit, messageResponses.size(), hasMore);
 
         return FetchMessagesResponse.builder()
+                .roomId(roomId)
                 .messages(messageResponses)
                 .hasMore(hasMore)
                 .build();

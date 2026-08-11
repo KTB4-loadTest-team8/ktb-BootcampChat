@@ -6,10 +6,13 @@ import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.repository.MessageRepository;
+import com.ktb.chatapp.repository.RoomRepository;
+import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -32,6 +35,8 @@ public class RoomJoinPostProcessService {
     private final MessageRepository messageRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final InitialMessageLoadService initialMessageLoadService;
+    private final RoomRepository roomRepository;
+    private final UserRepository userRepository;
 
     @Async("chatRoomPostJoinTaskExecutor")
     public void processAfterJoin(
@@ -50,7 +55,8 @@ public class RoomJoinPostProcessService {
         }
 
         try {
-            socketIOServer.getRoomOperations(roomId).sendEvent(PARTICIPANTS_UPDATE, participants);
+            socketIOServer.getRoomOperations(roomId)
+                    .sendEvent(PARTICIPANTS_UPDATE, loadLatestParticipants(roomId, participants));
         } catch (Exception e) {
             log.error("Error broadcasting participants after join for room {}", roomId, e);
         }
@@ -60,6 +66,37 @@ public class RoomJoinPostProcessService {
             initialMessageLoadService.loadAndSend(client, roomId, userId);
         } catch (Exception e) {
             log.error("Error scheduling initial message load after join for room {}", roomId, e);
+        }
+    }
+
+    /**
+     * 후처리는 방 입장 이벤트보다 늦게 실행될 수 있으므로, 입장 시점에 캡처한 참가자
+     * 목록을 그대로 브로드캐스트하지 않는다. 동시 입장 중 오래된 스냅샷이 최신 목록을
+     * 덮어쓰는 race를 막기 위해 전송 직전에 현재 방 상태를 다시 읽는다.
+     */
+    private List<UserResponse> loadLatestParticipants(
+            String roomId,
+            List<UserResponse> fallbackParticipants
+    ) {
+        try {
+            return roomRepository.findRoomForReadById(roomId)
+                    .map(room -> {
+                        if (room.getParticipantIds() == null || room.getParticipantIds().isEmpty()) {
+                            return List.<UserResponse>of();
+                        }
+
+                        Map<String, UserResponse> usersById = new HashMap<>();
+                        userRepository.findAllRoomSummariesById(room.getParticipantIds())
+                                .forEach(user -> usersById.put(user.getId(), UserResponse.from(user)));
+                        return room.getParticipantIds().stream()
+                                .map(usersById::get)
+                                .filter(java.util.Objects::nonNull)
+                                .toList();
+                    })
+                    .orElse(fallbackParticipants);
+        } catch (Exception e) {
+            log.warn("현재 참가자 목록 조회 실패, 입장 시점 스냅샷을 사용합니다. roomId={}", roomId, e);
+            return fallbackParticipants;
         }
     }
 
