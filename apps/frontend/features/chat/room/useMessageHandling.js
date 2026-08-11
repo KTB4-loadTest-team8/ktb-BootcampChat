@@ -66,12 +66,12 @@ export const useMessageHandling = (
    const roomSocket = getRoomSocket();
    if (!canSendOnRoomSocket() || !currentUser) {
      Toast.error('채팅 서버와 연결이 끊어졌습니다.');
-     return;
+     return false;
    }
 
    if (!roomId) {
      Toast.error('채팅방 정보를 찾을 수 없습니다.');
-     return;
+     return false;
    }
 
    try {
@@ -104,12 +104,16 @@ export const useMessageHandling = (
        }, roomSocket);
      }
 
+     // ChatInput uses this result to clear the draft only after both the
+     // upload (when present) and the socket acknowledgement have succeeded.
+     return true;
+
    } catch (error) {
      if (error.message?.includes('세션') ||
          error.message?.includes('인증') ||
          error.message?.includes('토큰')) {
        await handleSessionError();
-       return;
+       return false;
      }
 
      // 서버가 거부한 메시지는 onError 핸들러가 이미 토스트로 알렸다.
@@ -121,6 +125,8 @@ export const useMessageHandling = (
        setUploadError(error.message);
        setUploading(false);
      }
+
+     return false;
    }
  }, [currentUser, roomId, handleSessionError, uploadChatFile, resetFileUpload, setUploadError, setUploading, canSendOnRoomSocket, getRoomSocket]);
 
