@@ -44,6 +44,25 @@ public class MessageLoader {
      * 메시지 로드
      */
     public FetchMessagesResponse loadMessages(FetchMessagesRequest data, String userId) {
+        try {
+            return loadMessagesOrThrow(data, userId);
+        } catch (Exception e) {
+            log.error("Error loading initial messages for room {}", data.roomId(), e);
+            return FetchMessagesResponse.builder()
+                    .messages(emptyList())
+                    .hasMore(false)
+                    .build();
+        }
+    }
+
+    /**
+     * 메시지를 로드하고, 조회 실패를 호출자에게 전달한다.
+     *
+     * <p>채팅방 입장 직후의 비동기 초기 조회는 빈 채팅방과 조회 실패를 구분해야 하므로
+     * 이 메서드를 사용한다. 기존 이전 메시지 조회 이벤트는 {@link #loadMessages}를 통해
+     * 빈 응답 호환성을 유지한다.</p>
+     */
+    public FetchMessagesResponse loadMessagesOrThrow(FetchMessagesRequest data, String userId) {
         Timer.Sample timerSample = chatRoomMetrics.start();
         String metricStatus = "error";
         String loadType = data.before() == null ? "initial" : "history";
@@ -52,12 +71,6 @@ public class MessageLoader {
                     data.roomId(), data.limit(BATCH_SIZE), data.before(LocalDateTime.now()), userId);
             metricStatus = "success";
             return response;
-        } catch (Exception e) {
-            log.error("Error loading initial messages for room {}", data.roomId(), e);
-            return FetchMessagesResponse.builder()
-                    .messages(emptyList())
-                    .hasMore(false)
-                    .build();
         } finally {
             chatRoomMetrics.recordMessageLoad(timerSample, metricStatus, loadType);
         }

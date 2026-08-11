@@ -1018,6 +1018,9 @@ components:
           items:
             $ref: '#/components/schemas/MessageResponse'
           description: 초기 메시지 목록
+        initialMessagesPending:
+          type: boolean
+          description: 초기 메시지가 별도 previousMessagesLoaded 이벤트로 비동기 전달 중인지 여부
         hasMore:
           type: boolean
           description: 더 많은 메시지 존재 여부
