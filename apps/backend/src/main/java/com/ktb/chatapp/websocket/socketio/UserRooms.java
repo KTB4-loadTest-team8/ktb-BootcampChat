@@ -1,15 +1,24 @@
 package com.ktb.chatapp.websocket.socketio;
 
-import java.util.HashSet;
 import java.util.Set;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
 /**
  * Registry for tracking which rooms each user is currently in.
- * Maps userId -> Set<roomId> to maintain user room state across the application.
- * Users can now participate in multiple rooms simultaneously.
+ *
+ * <p>When the Socket.IO Redis store is enabled, the room membership set is
+ * stored in Redis so all Socket.IO instances see the same state when traffic
+ * is distributed across multiple EC2 nodes. Redis Set commands are used
+ * directly instead of a read-modify-write JSON value, which keeps join/leave
+ * updates atomic and avoids lost updates between nodes.</p>
+ *
+ * <p>Users can participate in multiple rooms simultaneously.</p>
  */
 @Component
 @ConditionalOnProperty(name = "socketio.enabled", havingValue = "true", matchIfMissing = true)
@@ -18,7 +27,11 @@ public class UserRooms {
 
     private static final String USER_ROOM_KEY_PREFIX = "userroom:roomids:";
 
-    private final ChatDataStore chatDataStore;
+    private final StringRedisTemplate redisTemplate;
+    private final Map<String, Set<String>> localRooms = new ConcurrentHashMap<>();
+
+    @Value("${socketio.redis.enabled:false}")
+    private boolean redisEnabled;
 
     /**
      * Get all room IDs for a user
@@ -26,11 +39,13 @@ public class UserRooms {
      * @param userId the user ID
      * @return the set of room IDs the user is currently in, or empty set if not in any room
      */
-    @SuppressWarnings("unchecked")
     public Set<String> get(String userId) {
-        return chatDataStore.get(buildKey(userId), Set.class)
-                .map(obj -> (Set<String>) obj)
-                .orElse(new HashSet<>());
+        if (!redisEnabled) {
+            return Set.copyOf(localRooms.getOrDefault(buildKey(userId), Set.of()));
+        }
+
+        Set<String> rooms = redisTemplate.opsForSet().members(buildKey(userId));
+        return rooms == null ? Set.of() : Set.copyOf(rooms);
     }
 
     /**
@@ -40,9 +55,13 @@ public class UserRooms {
      * @param roomId the room ID to add to the user's room set
      */
     public void add(String userId, String roomId) {
-        Set<String> rooms = new HashSet<>(get(userId));
-        rooms.add(roomId);
-        chatDataStore.set(buildKey(userId), rooms);
+        if (!redisEnabled) {
+            localRooms.computeIfAbsent(buildKey(userId), key -> ConcurrentHashMap.newKeySet())
+                    .add(roomId);
+            return;
+        }
+
+        redisTemplate.opsForSet().add(buildKey(userId), roomId);
     }
 
     /**
@@ -52,13 +71,18 @@ public class UserRooms {
      * @param roomId the room ID to remove
      */
     public void remove(String userId, String roomId) {
-        Set<String> rooms = new HashSet<>(get(userId));
-        rooms.remove(roomId);
-        if (rooms.isEmpty()) {
-            chatDataStore.delete(buildKey(userId));
-        } else {
-            chatDataStore.set(buildKey(userId), rooms);
+        if (!redisEnabled) {
+            Set<String> rooms = localRooms.get(buildKey(userId));
+            if (rooms != null) {
+                rooms.remove(roomId);
+                if (rooms.isEmpty()) {
+                    localRooms.remove(buildKey(userId), rooms);
+                }
+            }
+            return;
         }
+
+        redisTemplate.opsForSet().remove(buildKey(userId), roomId);
     }
 
     /**
@@ -67,7 +91,12 @@ public class UserRooms {
      * @param userId the user ID
      */
     public void clear(String userId) {
-        chatDataStore.delete(buildKey(userId));
+        if (!redisEnabled) {
+            localRooms.remove(buildKey(userId));
+            return;
+        }
+
+        redisTemplate.delete(buildKey(userId));
     }
 
     /**
@@ -78,7 +107,11 @@ public class UserRooms {
      * @return true if the user is in the room, false otherwise
      */
     public boolean isInRoom(String userId, String roomId) {
-        return get(userId).contains(roomId);
+        if (!redisEnabled) {
+            return localRooms.getOrDefault(buildKey(userId), Set.of()).contains(roomId);
+        }
+
+        return Boolean.TRUE.equals(redisTemplate.opsForSet().isMember(buildKey(userId), roomId));
     }
 
     private String buildKey(String userId) {
@@ -86,6 +119,6 @@ public class UserRooms {
     }
     
     public void removeAllRooms(String userId) {
-        get(userId).forEach(roomId -> remove(userId, roomId));
+        clear(userId);
     }
 }
