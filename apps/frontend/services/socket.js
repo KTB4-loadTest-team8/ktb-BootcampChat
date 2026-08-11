@@ -17,15 +17,88 @@ export class SocketService {
     this.connectionTimeout = null;
     this.retryDelay = 1000;
     this.connected = false;
+    this.sessionKey = null;
   }
 
   async connect(options = {}) {
+    const requestedSessionKey =
+      options.auth?.sessionId || options.auth?.token || null;
+
+    if (
+      this.socket &&
+      this.sessionKey &&
+      requestedSessionKey &&
+      this.sessionKey !== requestedSessionKey
+    ) {
+      this.rejectPendingConnection(new Error('Socket session changed'));
+      this.cleanupSocket(this.socket);
+      this.connectionPromise = null;
+    }
+
+    if (requestedSessionKey) {
+      this.sessionKey = requestedSessionKey;
+    }
+
     if (this.connectionPromise) {
       return this.connectionPromise;
     }
 
     if (this.socket?.connected) {
+      if (options.auth) {
+        this.socket.auth = options.auth;
+      }
       return Promise.resolve(this.socket);
+    }
+
+    if (this.socket) {
+      const socket = this.socket;
+      if (options.auth) {
+        socket.auth = options.auth;
+      }
+
+      const connectionPromise = new Promise((resolve, reject) => {
+        const cleanupWaiters = () => {
+          this.clearConnectionTimeout();
+          socket.off('connect', handleConnect);
+          socket.off('connect_error', handleConnectError);
+        };
+
+        const settle = (callback, value) => {
+          if (socket !== this.socket) return;
+          cleanupWaiters();
+          this.connectionReject = null;
+          callback(value);
+        };
+
+        const handleConnect = () => settle(resolve, socket);
+        const handleConnectError = (error) => {
+          if (error.message === 'Invalid session') {
+            settle(reject, error);
+            this.cleanupSocket(socket);
+          }
+        };
+
+        this.connectionReject = (error) => settle(reject, error);
+        this.connectionTimeout = setTimeout(() => {
+          if (socket === this.socket && !socket.connected) {
+            settle(reject, new Error('Connection timeout'));
+          }
+        }, 30000);
+
+        socket.on('connect', handleConnect);
+        socket.on('connect_error', handleConnectError);
+
+        if (!socket.active && typeof socket.connect === 'function') {
+          socket.connect();
+        }
+      }).finally(() => {
+        if (this.connectionPromise === connectionPromise) {
+          this.connectionPromise = null;
+        }
+      });
+
+      this.connectionPromise = connectionPromise;
+      return connectionPromise;
     }
 
     const connectionPromise = new Promise((resolve, reject) => {
@@ -48,15 +121,13 @@ export class SocketService {
 
         this.clearConnectionTimeout();
         this.connectionReject = null;
-        this.cleanupSocket(failedSocket);
+        if (error.message === 'Invalid session') {
+          this.cleanupSocket(failedSocket);
+        }
         reject(error);
       };
 
       try {
-        if (this.socket) {
-          this.cleanupSocket(this.socket);
-        }
-
         const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL;
 
         socket = io(socketUrl, {
@@ -67,7 +138,8 @@ export class SocketService {
           reconnectionDelay: this.retryDelay,
           reconnectionDelayMax: 5000,
           timeout: 20000,
-          forceNew: true
+          forceNew: false,
+          multiplex: true
         });
         this.socket = socket;
         this.connectionReject = (error) => rejectConnection(error, socket);
@@ -96,7 +168,7 @@ export class SocketService {
     return this.connectionPromise;
   }
 
-  setupEventHandlers(socket, resolve, reject) {
+  setupEventHandlers(socket, resolve) {
     socket.on('connect', () => {
       if (socket !== this.socket) {
         return;
@@ -124,7 +196,8 @@ export class SocketService {
 
       console.log('Socket connection error:', error.message);
       if (error.message === 'Invalid session') {
-        reject(error, socket);
+        this.rejectPendingConnection(error);
+        this.cleanupSocket(socket);
         return;
       }
       if (error.message === 'websocket error') {
@@ -135,7 +208,7 @@ export class SocketService {
       // 이미 연결됐던 소켓의 재시도 실패까지 여기서 끊으면 socket.io 의 재연결이
       // 중단돼 reconnect_failed 가 발생하지 못하고, 서버가 돌아와도 다시 붙지 않는다.
       if (this.connectionReject && this.reconnectAttempts >= this.maxReconnectAttempts) {
-        reject(error, socket);
+        this.rejectPendingConnection(error);
       }
     });
 
@@ -173,7 +246,7 @@ export class SocketService {
         return;
       }
 
-      reject(new Error('Reconnection failed'), socket);
+      this.rejectPendingConnection(new Error('Reconnection failed'));
     });
   }
 
@@ -227,6 +300,7 @@ export class SocketService {
       this.isReconnecting = false;
       this.connectionPromise = null;
       this.connected = false;
+      this.sessionKey = null;
     }
   }
 
@@ -278,22 +352,19 @@ export class SocketService {
   }
 
   async reconnect() {
-    if (this.isReconnecting) return;
+    if (this.isReconnecting) return this.connectionPromise;
 
     this.isReconnecting = true;
     this.rejectPendingConnection(new Error('Connection disconnected'));
     this.connectionPromise = null;
 
-    if (this.socket) {
-      this.cleanupSocket(this.socket);
-    }
-
     try {
       await new Promise(resolve => setTimeout(resolve, this.retryDelay));
-      await this.connect();
+      return await this.connect({ auth: this.socket?.auth });
     } catch (error) {
-      this.isReconnecting = false;
       throw error;
+    } finally {
+      this.isReconnecting = false;
     }
   }
 

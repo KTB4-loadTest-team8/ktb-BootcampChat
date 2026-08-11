@@ -29,7 +29,9 @@ const renderRoomsSocket = (socket, overrides = {}) => {
 };
 
 const createSocket = () => ({
+  connected: true,
   on: vi.fn(),
+  off: vi.fn(),
   emit: vi.fn(),
   disconnect: vi.fn(),
 });
@@ -43,11 +45,7 @@ describe('useRoomsSocket', () => {
   });
 
   it('does not emit joinRoomList because the server joins room-list on connect', async () => {
-    const socket = {
-      on: vi.fn(),
-      emit: vi.fn(),
-      disconnect: vi.fn(),
-    };
+    const socket = createSocket();
 
     renderRoomsSocket(socket);
 
@@ -62,11 +60,7 @@ describe('useRoomsSocket', () => {
   });
 
   it('does not register roomDeleted without a server-side room delete event', async () => {
-    const socket = {
-      on: vi.fn(),
-      emit: vi.fn(),
-      disconnect: vi.fn(),
-    };
+    const socket = createSocket();
 
     renderRoomsSocket(socket);
 
@@ -116,5 +110,19 @@ describe('useRoomsSocket', () => {
     handlerFor(socket, 'roomActivity')(undefined);
 
     expect(setRooms).not.toHaveBeenCalled();
+  });
+
+  it('unsubscribes screen listeners without disconnecting the session socket', async () => {
+    const socket = createSocket();
+    const { unmount } = renderRoomsSocket(socket);
+
+    await waitFor(() => {
+      expect(socket.on).toHaveBeenCalledWith('roomCreated', expect.any(Function));
+    });
+
+    unmount();
+
+    expect(socket.off).toHaveBeenCalledWith('roomCreated', expect.any(Function));
+    expect(socket.disconnect).not.toHaveBeenCalled();
   });
 });

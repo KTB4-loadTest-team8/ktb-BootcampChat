@@ -57,9 +57,20 @@ export const useRoomList = ({
   }, [isRetrying, setConnectionStatus]);
 
   const loadRooms = useCallback(async () => {
+    // 인증 복원 직후 방 목록 요청을 시작한다. 연결 상태 판정은 기존 E2E 계약대로
+    // health 응답을 기다리되, 정상 경로에서 두 HTTP 요청의 지연이 누적되지 않게 한다.
+    const roomsRequest = axiosInstance.get('/api/rooms').then(
+      (response) => ({ response, error: null }),
+      (error) => ({ response: null, error })
+    );
+
     await attemptConnection();
 
-    const response = await axiosInstance.get('/api/rooms');
+    const { response, error } = await roomsRequest;
+
+    if (error) {
+      throw error;
+    }
 
     if (!response?.data?.data) {
       throw new Error('INVALID_RESPONSE');

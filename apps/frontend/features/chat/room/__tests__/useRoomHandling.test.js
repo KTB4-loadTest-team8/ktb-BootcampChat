@@ -247,6 +247,12 @@ describe('useRoomHandling', () => {
     });
 
     expect(socketClient.connect).toHaveBeenCalledTimes(1);
+    expect(socketClient.connect).toHaveBeenCalledWith({
+      auth: {
+        token: 'token-1',
+        sessionId: 'session-1',
+      },
+    });
     expect(api.get).toHaveBeenCalledWith('/api/rooms/room-1', expect.any(Object));
     expect(socketClient.subscribeRoomEvents).toHaveBeenCalledWith(
       harness.socketRef.current,
@@ -272,6 +278,22 @@ describe('useRoomHandling', () => {
     );
     expect(harness.setters.setIsInitialized).not.toHaveBeenCalled();
     expect(harness.setupCompleteRef.current).toBe(true);
+  });
+
+  it('unsubscribes room events without disconnecting the session socket on unmount', async () => {
+    const unsubscribe = vi.fn();
+    socketClient.subscribeRoomEvents.mockReturnValueOnce(unsubscribe);
+    const harness = createHarness();
+
+    await act(async () => {
+      await harness.result.current.setupRoom();
+    });
+    const socket = harness.socketRef.current;
+
+    harness.unmount();
+
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(socket.disconnect).not.toHaveBeenCalled();
   });
 
   it('falls back to fetching previous messages when join response has no messages', async () => {
