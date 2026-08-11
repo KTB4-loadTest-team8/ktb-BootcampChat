@@ -40,8 +40,12 @@ export default function ChatRoomsView({ router }) {
   } = useServerConnection();
 
   const {
-    rooms,
-    setRooms,
+    roomOrder,
+    roomsById,
+    roomsRevision,
+    prependRoom,
+    replaceRoom,
+    mergeRoomActivity,
     error,
     loading,
     refreshing,
@@ -134,7 +138,13 @@ export default function ChatRoomsView({ router }) {
     };
   }, [currentUserKey, connectionStatus]);
 
-  useRoomsSocket({ currentUser, setConnectionStatus, setRooms });
+  useRoomsSocket({
+    currentUser,
+    setConnectionStatus,
+    prependRoom,
+    replaceRoom,
+    mergeRoomActivity,
+  });
 
   return (
     <Box
@@ -232,9 +242,11 @@ export default function ChatRoomsView({ router }) {
             <Box $css={{ padding: '$400' }}>
               <LoadingIndicator text="채팅방 목록을 불러오는 중..." />
             </Box>
-          ) : rooms.length > 0 ? (
+          ) : roomOrder.length > 0 ? (
             <RoomsTable
-              rooms={rooms}
+              roomOrder={roomOrder}
+              roomsById={roomsById}
+              roomsRevision={roomsRevision}
               connectionStatus={connectionStatus}
               onJoinRoom={handleJoinRoom}
             />

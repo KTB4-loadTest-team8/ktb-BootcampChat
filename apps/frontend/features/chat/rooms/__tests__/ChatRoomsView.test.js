@@ -41,8 +41,12 @@ vi.mock('../useServerConnection', async () => {
 
 vi.mock('../useRoomList', () => ({
   useRoomList: () => ({
-    rooms: [],
-    setRooms: vi.fn(),
+    roomOrder: [],
+    roomsById: new Map(),
+    roomsRevision: 0,
+    prependRoom: vi.fn(),
+    replaceRoom: vi.fn(),
+    mergeRoomActivity: vi.fn(),
     error: mocks.error,
     loading: false,
     refreshing: false,

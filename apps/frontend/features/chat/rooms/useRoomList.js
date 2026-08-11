@@ -10,7 +10,11 @@ export const useRoomList = ({
   isRetrying,
   attemptConnection,
 }) => {
-  const [rooms, setRooms] = useState([]);
+  const [roomOrder, setRoomOrder] = useState([]);
+  // 이벤트마다 Map 전체를 복제하면 다시 O(n)이 되므로 저장소는 ref로 유지하고,
+  // revision만 올려 React에 변경을 알린다. 각 방 객체의 참조는 변경된 ID만 교체된다.
+  const roomsByIdRef = useRef(new Map());
+  const [roomsRevision, setRoomsRevision] = useState(0);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -18,6 +22,58 @@ export const useRoomList = ({
   const [joiningRoom, setJoiningRoom] = useState(false);
 
   const isLoadingRef = useRef(false);
+
+  const commitRoomMutation = useCallback(() => {
+    setRoomsRevision((revision) => revision + 1);
+  }, []);
+
+  const replaceRooms = useCallback((rooms) => {
+    const nextRoomsById = new Map();
+    const nextRoomOrder = [];
+
+    for (const room of rooms) {
+      if (!room?._id || nextRoomsById.has(room._id)) continue;
+      nextRoomsById.set(room._id, room);
+      nextRoomOrder.push(room._id);
+    }
+
+    roomsByIdRef.current = nextRoomsById;
+    setRoomOrder(nextRoomOrder);
+    commitRoomMutation();
+  }, [commitRoomMutation]);
+
+  const prependRoom = useCallback((room) => {
+    if (!room?._id) return;
+
+    const alreadyExists = roomsByIdRef.current.has(room._id);
+    roomsByIdRef.current.set(room._id, room);
+
+    if (!alreadyExists) {
+      setRoomOrder((order) => [room._id, ...order]);
+    }
+
+    commitRoomMutation();
+  }, [commitRoomMutation]);
+
+  const replaceRoom = useCallback((room) => {
+    if (!room?._id || !roomsByIdRef.current.has(room._id)) return;
+
+    roomsByIdRef.current.set(room._id, room);
+    commitRoomMutation();
+  }, [commitRoomMutation]);
+
+  const mergeRoomActivity = useCallback((activity) => {
+    if (!activity?._id) return;
+
+    const currentRoom = roomsByIdRef.current.get(activity._id);
+    if (!currentRoom) return;
+
+    roomsByIdRef.current.set(activity._id, {
+      ...currentRoom,
+      recentMessageCount: activity.recentMessageCount,
+    });
+    commitRoomMutation();
+  }, [commitRoomMutation]);
 
   const handleFetchError = useCallback((error) => {
     let errorMessage = '채팅방 목록을 불러오는데 실패했습니다.';
@@ -76,8 +132,8 @@ export const useRoomList = ({
       throw new Error('INVALID_RESPONSE');
     }
 
-    setRooms(response.data.data);
-  }, [attemptConnection]);
+    replaceRooms(response.data.data);
+  }, [attemptConnection, replaceRooms]);
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token || isLoadingRef.current) {
@@ -174,8 +230,12 @@ export const useRoomList = ({
   }, [connectionStatus, router]);
 
   return {
-    rooms,
-    setRooms,
+    roomOrder,
+    roomsById: roomsByIdRef.current,
+    roomsRevision,
+    prependRoom,
+    replaceRoom,
+    mergeRoomActivity,
     error,
     setError,
     loading,

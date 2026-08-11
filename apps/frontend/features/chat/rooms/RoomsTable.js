@@ -101,7 +101,13 @@ const SpacerRow = ({ height }) => {
   );
 };
 
-const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
+const RoomsTable = ({
+  roomOrder,
+  roomsById,
+  roomsRevision,
+  connectionStatus,
+  onJoinRoom,
+}) => {
   const [scrollTop, setScrollTop] = useState(0);
 
   const handleScroll = useCallback((event) => {
@@ -110,7 +116,7 @@ const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
 
   const { visibleRooms, startIndex, endIndex } = useMemo(() => {
     const visibleRowCount = Math.ceil(ROOMS_TABLE_HEIGHT / ROOM_ROW_HEIGHT);
-    const roomCount = rooms?.length || 0;
+    const roomCount = roomOrder?.length || 0;
     const maxFirstVisibleIndex = Math.max(0, roomCount - visibleRowCount);
     const firstVisibleIndex = Math.min(
       Math.floor(scrollTop / ROOM_ROW_HEIGHT),
@@ -123,13 +129,15 @@ const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
     );
 
     return {
-      visibleRooms: rooms?.slice(nextStartIndex, nextEndIndex) || [],
+      visibleRooms: (roomOrder?.slice(nextStartIndex, nextEndIndex) || [])
+        .map((roomId) => roomsById.get(roomId))
+        .filter(Boolean),
       startIndex: nextStartIndex,
       endIndex: nextEndIndex,
     };
-  }, [rooms, scrollTop]);
+  }, [roomOrder, roomsById, roomsRevision, scrollTop]);
 
-  if (!rooms || rooms.length === 0) return null;
+  if (!roomOrder || roomOrder.length === 0) return null;
 
   return (
     <div
@@ -175,7 +183,7 @@ const RoomsTable = ({ rooms, connectionStatus, onJoinRoom }) => {
               onJoinRoom={onJoinRoom}
             />
           ))}
-          <SpacerRow height={(rooms.length - endIndex) * ROOM_ROW_HEIGHT} />
+          <SpacerRow height={(roomOrder.length - endIndex) * ROOM_ROW_HEIGHT} />
         </Table.Body>
       </Table.Root>
     </div>
