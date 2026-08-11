@@ -30,6 +30,8 @@ class RoomListSnapshotServiceTest {
         Room newerRoom = room("room-2", "creator-2", Set.of("creator-2", "user-1", "user-2"), 2);
 
         when(roomRepository.findAll()).thenReturn(List.of(olderRoom, newerRoom));
+        when(userRepository.findAllRoomSummariesById(Set.of("creator-1", "creator-2")))
+                .thenReturn(List.of(user("creator-1"), user("creator-2")));
         when(userRepository.findAllRoomSummariesById(Set.of("creator-1", "creator-2", "user-1", "user-2")))
                 .thenReturn(List.of(
                         user("creator-1"), user("creator-2"), user("user-1"), user("user-2")
@@ -37,11 +39,14 @@ class RoomListSnapshotServiceTest {
         when(recentMessageCounter.countRecentMessages(List.of("room-1", "room-2")))
                 .thenReturn(Map.of("room-1", 3, "room-2", 7));
 
-        var result = new RoomListSnapshotService(roomRepository, userRepository, recentMessageCounter)
+        var result = new RoomListSnapshotService(
+                new RoomBaseSnapshotService(roomRepository, userRepository, recentMessageCounter),
+                new RoomParticipantSnapshotService(roomRepository, userRepository))
                 .getRoomSnapshots();
 
         assertThat(result).extracting("id").containsExactly("room-2", "room-1");
         assertThat(result).extracting("recentMessageCount").containsExactly(7, 3);
+        verify(userRepository).findAllRoomSummariesById(Set.of("creator-1", "creator-2"));
         verify(userRepository).findAllRoomSummariesById(Set.of("creator-1", "creator-2", "user-1", "user-2"));
         verify(recentMessageCounter).countRecentMessages(List.of("room-1", "room-2"));
     }

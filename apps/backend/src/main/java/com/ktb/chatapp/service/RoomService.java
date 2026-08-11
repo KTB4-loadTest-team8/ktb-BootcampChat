@@ -15,7 +15,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import org.springframework.cache.annotation.CacheEvict;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -26,8 +25,6 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class RoomService {
-
-    static final String ROOMS_CACHE = RoomListSnapshotService.ROOMS_CACHE;
 
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
@@ -114,7 +111,6 @@ public class RoomService {
         }
     }
 
-    @CacheEvict(cacheNames = ROOMS_CACHE, allEntries = true)
     public Room createRoom(CreateRoomRequest createRoomRequest, String name) {
         User creator = userRepository.findByEmail(name)
             .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + name));
@@ -130,6 +126,7 @@ public class RoomService {
         }
 
         Room savedRoom = roomRepository.save(room);
+        roomListSnapshotService.evictAllSnapshots();
         
         // Publish event for room created
         try {
@@ -146,7 +143,6 @@ public class RoomService {
         return roomRepository.findRoomForReadById(roomId);
     }
 
-    @CacheEvict(cacheNames = ROOMS_CACHE, allEntries = true)
     public RoomResponse joinRoom(String roomId, String password, String name) {
         Optional<Room> roomOpt = roomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {
@@ -173,6 +169,7 @@ public class RoomService {
             if (room == null) {
                 return null;
             }
+            roomListSnapshotService.evictParticipantSnapshots();
         }
         
         RoomResponse roomResponse = mapToRoomResponse(room, name);

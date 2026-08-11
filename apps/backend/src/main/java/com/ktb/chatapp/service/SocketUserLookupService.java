@@ -21,7 +21,12 @@ public class SocketUserLookupService {
 
     private final UserRepository userRepository;
 
-    @Cacheable(cacheNames = SOCKET_USER_CACHE, key = "#userId", unless = "#result == null")
+    /**
+     * 같은 사용자로 동시에 여러 핸드셰이크가 들어와도 캐시 miss 동안 MongoDB를
+     * 한 번만 조회한다. RedisCacheConfig에서 null 캐시를 비활성화하므로 별도의
+     * unless 조건은 필요하지 않다.
+     */
+    @Cacheable(cacheNames = SOCKET_USER_CACHE, key = "#userId", sync = true)
     public SocketUserIdentity findById(String userId) {
         return userRepository.findById(userId)
                 .map(this::toIdentity)
