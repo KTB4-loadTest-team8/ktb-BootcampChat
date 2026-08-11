@@ -42,6 +42,9 @@ public class SocketIOConfig {
     @Value("${socketio.server.origin:*}")
     private String origin;
 
+    @Value("${socketio.server.accept-backlog:100}")
+    private int acceptBacklog;
+
     @Value("${socketio.redis.enabled:false}")
     private boolean redisStoreEnabled;
 
@@ -85,7 +88,7 @@ public class SocketIOConfig {
         var socketConfig = new SocketConfig();
         socketConfig.setReuseAddress(true);
         socketConfig.setTcpNoDelay(false);
-        socketConfig.setAcceptBackLog(10);
+        socketConfig.setAcceptBackLog(acceptBacklog);
         socketConfig.setTcpSendBufferSize(4096);    //나중에 수정
         socketConfig.setTcpReceiveBufferSize(4096);
         config.setSocketConfig(socketConfig);
@@ -107,8 +110,8 @@ public class SocketIOConfig {
             log.warn("Socket.IO is using an in-memory store; cross-node broadcasts are disabled");
         }
 
-        log.info("Socket.IO server configured on {}:{} with {} boss threads and {} worker threads",
-                 host, port, config.getBossThreads(), config.getWorkerThreads());
+        log.info("Socket.IO server configured on {}:{} with accept backlog {}, {} boss threads and {} worker threads",
+                 host, port, acceptBacklog, config.getBossThreads(), config.getWorkerThreads());
         var socketIOServer = new SocketIOServer(config);
         socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addAuthTokenListener(authTokenListener);
         socketIOServer.getNamespace(Namespace.DEFAULT_NAME).addEventInterceptor((client, name, data, ack) -> {
