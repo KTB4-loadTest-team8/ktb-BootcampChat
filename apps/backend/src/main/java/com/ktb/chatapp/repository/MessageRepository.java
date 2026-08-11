@@ -9,6 +9,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.mongodb.repository.MongoRepository;
 import org.springframework.data.mongodb.repository.Aggregation;
 import org.springframework.data.mongodb.repository.Query;
+import org.springframework.data.mongodb.repository.Update;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.domain.Slice;
 
@@ -16,6 +17,11 @@ import org.springframework.data.domain.Slice;
 @Repository
 public interface MessageRepository extends MongoRepository<Message, String> {
     Slice<Message> findByRoomIdAndTimestampBefore(String roomId, LocalDateTime timestamp, Pageable pageable);
+
+    @Query("{ '_id': { '$in': ?0 }, 'readers.userId': { '$ne': ?1 } }")
+    @Update("{ '$addToSet': { 'readers': ?2 } }")
+    long addReaderToMessages(Collection<String> messageIds, String userId, Message.MessageReader reader);
+
     /**
      * 특정 시간 이후의 메시지 수 카운트
      * 최근 N분간 메시지 수를 조회할 때 사용
