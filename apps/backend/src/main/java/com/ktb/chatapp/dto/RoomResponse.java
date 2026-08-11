@@ -1,6 +1,7 @@
 package com.ktb.chatapp.dto;
 
 import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -20,6 +21,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class RoomResponse {
     @Schema(description = "채팅방 ID", example = "60d5ec49f1b2c8b9e8c4f2a1")
     @JsonProperty("_id")

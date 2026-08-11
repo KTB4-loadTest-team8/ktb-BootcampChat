@@ -75,15 +75,15 @@ class RoomJoinHandlerTest {
         User participant = User.builder().id("user-2").name("participant").email("participant@example.com").build();
         Room room = Room.builder().id("room-1").name("room").participantIds(Set.of("user-1", "user-2")).build();
         when(client.get("user")).thenReturn(socketUser);
-        when(userRepository.findAllById(Set.of("user-1", "user-2"))).thenReturn(List.of(user, participant));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(userRepository.findAllRoomSummariesById(Set.of("user-1", "user-2"))).thenReturn(List.of(user, participant));
+        when(roomRepository.findRoomForReadById("room-1")).thenReturn(Optional.of(room));
         when(roomRepository.addParticipantAndReturn("room-1", "user-1"))
                 .thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(false);
         handler.handleJoinRoom(client, "room-1");
 
         verify(roomRepository).addParticipantAndReturn("room-1", "user-1");
-        verify(roomRepository, times(1)).findById("room-1");
+        verify(roomRepository, times(1)).findRoomForReadById("room-1");
         verify(client).joinRoom("room-1");
         verify(userRooms).add("user-1", "room-1");
         ArgumentCaptor<JoinRoomSuccessResponse> responseCaptor =
@@ -98,7 +98,7 @@ class RoomJoinHandlerTest {
         joinResponseThenPostProcess.verify(client).sendEvent(eq(JOIN_ROOM_SUCCESS), any());
         joinResponseThenPostProcess.verify(roomJoinPostProcessService)
                 .processAfterJoin(eq(client), eq("room-1"), eq("user-1"), eq("tester"), any());
-        verify(userRepository).findAllById(Set.of("user-1", "user-2"));
+        verify(userRepository).findAllRoomSummariesById(Set.of("user-1", "user-2"));
         verify(userRepository, never()).findById("user-1");
         verify(userRepository, never()).findById("user-2");
         org.assertj.core.api.Assertions.assertThat(meterRegistry

@@ -1,5 +1,6 @@
 package com.ktb.chatapp.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.service.FileUrl;
 import lombok.AllArgsConstructor;
@@ -11,6 +12,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @AllArgsConstructor
 @NoArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class UserResponse {
     private String id;
     private String name;

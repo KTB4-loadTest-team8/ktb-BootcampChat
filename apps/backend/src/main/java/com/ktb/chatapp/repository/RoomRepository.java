@@ -19,6 +19,14 @@ public interface RoomRepository extends MongoRepository<Room, String>, RoomRepos
     @Query(value = "{}", fields = "{ '_id': 1 }")
     Optional<Room> findOneForHealthCheck();
 
+    /**
+     * REST 방 상세·Socket.IO 권한 확인에 필요한 방 필드만 조회한다.
+     * 비밀번호 해시를 포함한 전체 Room 문서를 읽지 않는다.
+     */
+    @Query(value = "{ '_id': ?0 }", fields =
+            "{ '_id': 1, 'name': 1, 'creator': 1, 'hasPassword': 1, 'createdAt': 1, 'participantIds': 1 }")
+    Optional<Room> findRoomForReadById(String roomId);
+
     @Query("{'_id': ?0}")
     @Update("{'$addToSet': {'participantIds': ?1}}")
     void addParticipant(String roomId, String userId);

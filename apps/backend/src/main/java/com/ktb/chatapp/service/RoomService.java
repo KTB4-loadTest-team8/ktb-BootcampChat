@@ -29,7 +29,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class RoomService {
 
-    static final String ROOMS_CACHE = "rooms:v2";
+    static final String ROOMS_CACHE = "rooms:v3";
 
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
@@ -41,15 +41,14 @@ public class RoomService {
     public RoomsResponse getAllRooms(String name) {
 
         try {
-            // API 응답은 유지하고, 방별 사용자/최근 메시지 조회만 일괄 처리한다.
+            // 목록 응답 형태는 유지하되, 방별 사용자 상세 조회는 생략하고 최근 메시지 수만 일괄 처리한다.
             List<Room> rooms = roomRepository.findAll();
-            Map<String, User> usersById = findUsersByRoomIds(rooms);
             Map<String, Integer> recentMessageCounts = recentMessageCounter.countRecentMessages(
                     rooms.stream().map(Room::getId).toList()
             );
 
             List<RoomResponse> roomResponses = rooms.stream()
-                .map(room -> mapToRoomResponse(room, name, usersById, recentMessageCounts))
+                .map(room -> mapToRoomListResponse(room, name, recentMessageCounts))
                 .sorted(Comparator.comparing(
                     RoomResponse::getCreatedAtDateTime,
                     Comparator.nullsLast(Comparator.reverseOrder())))
@@ -154,7 +153,7 @@ public class RoomService {
     }
 
     public Optional<Room> findRoomById(String roomId) {
-        return roomRepository.findById(roomId);
+        return roomRepository.findRoomForReadById(roomId);
     }
 
     @CacheEvict(cacheNames = ROOMS_CACHE, allEntries = true)
@@ -254,6 +253,37 @@ public class RoomService {
             .build();
     }
 
+    /**
+     * 방 목록은 참가자 수만 표시하므로 사용자 상세 정보를 조회하지 않는다.
+     * 기존 프론트 계약의 participants 배열은 유지하되 각 항목에는 ID만 담는다.
+     */
+    private RoomResponse mapToRoomListResponse(
+            Room room,
+            String name,
+            Map<String, Integer> recentMessageCounts
+    ) {
+        List<UserResponse> participantIds = room.getParticipantIds() == null
+                ? List.of()
+                : room.getParticipantIds().stream()
+                .map(id -> UserResponse.builder().id(id).build())
+                .toList();
+
+        return RoomResponse.builder()
+                .id(room.getId())
+                .name(room.getName() != null ? room.getName() : "제목 없음")
+                .hasPassword(room.isHasPassword())
+                .creator(room.getCreator() == null
+                        ? null
+                        : UserResponse.builder().id(room.getCreator()).build())
+                .participants(participantIds)
+                .createdAtDateTime(room.getCreatedAt() != null
+                        ? room.getCreatedAt()
+                        : LocalDateTime.now())
+                .isCreator(room.getCreator() != null && room.getCreator().equals(name))
+                .recentMessageCount(recentMessageCounts.getOrDefault(room.getId(), 0))
+                .build();
+    }
+
     private Map<String, User> findUsersByRoomIds(List<Room> rooms) {
         Set<String> userIds = new HashSet<>();
         for (Room room : rooms) {
@@ -270,7 +300,7 @@ public class RoomService {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(userIds)
+        userRepository.findAllRoomSummariesById(userIds)
                 .forEach(user -> usersById.put(user.getId(), user));
         return usersById;
     }

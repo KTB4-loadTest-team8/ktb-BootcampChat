@@ -2,6 +2,7 @@ package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.ktb.chatapp.dto.FileResponse;
 import com.ktb.chatapp.dto.MessageResponse;
+import com.ktb.chatapp.dto.MessageReaderResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
@@ -73,7 +74,12 @@ public class MessageResponseMapper {
                 .reactions(message.getReactions() != null ?
                         message.getReactions() : new HashMap<>())
                 .readers(message.getReaders() != null ?
-                        message.getReaders() : new ArrayList<>());
+                        message.getReaders().stream()
+                                .map(reader -> MessageReaderResponse.builder()
+                                        .userId(reader.getUserId())
+                                        .build())
+                                .toList()
+                        : new ArrayList<>());
 
         // 발신자 정보 설정
         if (sender != null) {
@@ -94,11 +100,6 @@ public class MessageResponseMapper {
                     .mimetype(file.getMimetype())
                     .size(file.getSize())
                     .build());
-        }
-
-        // 메타데이터 설정
-        if (message.getMetadata() != null) {
-            builder.metadata(message.getMetadata());
         }
 
         return builder.build();

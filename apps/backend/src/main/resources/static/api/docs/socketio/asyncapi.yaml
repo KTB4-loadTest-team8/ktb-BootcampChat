@@ -928,14 +928,7 @@ components:
             properties:
               userId:
                 type: string
-              readAt:
-                type: integer
-                format: int64
-          description: 읽음 정보
-        metadata:
-          type: object
-          additionalProperties: true
-          description: 메타데이터 (자유 형식)
+          description: 읽은 사용자 ID 목록
       required:
         - _id
         - room

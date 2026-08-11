@@ -249,8 +249,6 @@ public class ChatMessageHandler {
         messageResponse.setTimestamp(message.toTimestampMillis());
         messageResponse.setReactions(message.getReactions() != null ? message.getReactions() : Collections.emptyMap());
         messageResponse.setSender(UserResponse.from(sender));
-        messageResponse.setMetadata(message.getMetadata());
-
         if (message.getFileId() != null) {
             fileRepository.findById(message.getFileId())
                     .ifPresent(file -> messageResponse.setFile(FileResponse.from(file)));

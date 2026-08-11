@@ -61,7 +61,7 @@ public class RoomLeaveHandler {
             }
 
             User user = userRepository.findById(userId).orElse(null);
-            Room room = roomRepository.findById(roomId).orElse(null);
+            Room room = roomRepository.findRoomForReadById(roomId).orElse(null);
             
             if (user == null || room == null) {
                 log.warn("Room {} not found or user {} has no access", roomId, userId);
@@ -110,7 +110,7 @@ public class RoomLeaveHandler {
     }
     
     private void broadcastParticipantList(String roomId) {
-        Optional<Room> roomOpt = roomRepository.findById(roomId);
+        Optional<Room> roomOpt = roomRepository.findRoomForReadById(roomId);
         if (roomOpt.isEmpty()) {
             return;
         }
@@ -145,7 +145,7 @@ public class RoomLeaveHandler {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(room.getParticipantIds())
+        userRepository.findAllRoomSummariesById(room.getParticipantIds())
                 .forEach(user -> usersById.put(user.getId(), user));
 
         return room.getParticipantIds().stream()

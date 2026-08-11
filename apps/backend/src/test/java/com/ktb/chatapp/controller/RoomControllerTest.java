@@ -50,7 +50,7 @@ class RoomControllerTest {
                 io.micrometer.core.instrument.Timer.start(new SimpleMeterRegistry())
         );
         when(roomService.findRoomById("room-1")).thenReturn(Optional.of(room));
-        when(userRepository.findAllById(ArgumentMatchers.anySet())).thenReturn(List.of(creator));
+        when(userRepository.findAllRoomSummariesById(ArgumentMatchers.anySet())).thenReturn(List.of(creator));
 
         RoomController controller = new RoomController(
                 userRepository,

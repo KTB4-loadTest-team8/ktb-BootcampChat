@@ -35,15 +35,11 @@ class RoomServiceTest {
     @Mock private ApplicationEventPublisher eventPublisher;
 
     @Test
-    void getAllRooms_shouldBatchUsersAndRecentMessageCounts() {
+    void getAllRooms_shouldAvoidUserLookupAndBatchRecentMessageCounts() {
         Room olderRoom = room("room-1", "creator-1", Set.of("creator-1", "user-1"), 1);
         Room newerRoom = room("room-2", "creator-2", Set.of("creator-2", "user-1", "user-2"), 2);
 
         when(roomRepository.findAll()).thenReturn(List.of(olderRoom, newerRoom));
-        when(userRepository.findAllById(Set.of("creator-1", "creator-2", "user-1", "user-2")))
-                .thenReturn(List.of(
-                        user("creator-1"), user("creator-2"), user("user-1"), user("user-2")
-                ));
         when(recentMessageCounter.countRecentMessages(List.of("room-1", "room-2")))
                 .thenReturn(Map.of("room-1", 3, "room-2", 7));
 
@@ -58,7 +54,9 @@ class RoomServiceTest {
         assertThat(result.isSuccess()).isTrue();
         assertThat(result.getData()).extracting("id").containsExactly("room-2", "room-1");
         assertThat(result.getData()).extracting("recentMessageCount").containsExactly(7, 3);
-        verify(userRepository).findAllById(Set.of("creator-1", "creator-2", "user-1", "user-2"));
+        assertThat(result.getData().getFirst().getParticipants())
+                .allSatisfy(participant -> assertThat(participant.getName()).isNull());
+        verify(userRepository, never()).findAllRoomSummariesById(any());
         verify(recentMessageCounter).countRecentMessages(List.of("room-1", "room-2"));
         verify(userRepository, never()).findById(anyString());
         verify(recentMessageCounter, never()).countRecentMessages(anyString());
@@ -72,7 +70,7 @@ class RoomServiceTest {
 
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(participant));
-        when(userRepository.findAllById(Set.of("creator-1", "user-1")))
+        when(userRepository.findAllRoomSummariesById(Set.of("creator-1", "user-1")))
                 .thenReturn(List.of(creator, participant));
         when(recentMessageCounter.countRecentMessages(List.of("room-1")))
                 .thenReturn(Map.of("room-1", 3));
@@ -89,7 +87,7 @@ class RoomServiceTest {
         ArgumentCaptor<RoomUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(RoomUpdatedEvent.class);
         verify(eventPublisher).publishEvent(eventCaptor.capture());
         assertThat(eventCaptor.getValue().getRoomResponse()).isSameAs(result);
-        verify(userRepository).findAllById(Set.of("creator-1", "user-1"));
+        verify(userRepository).findAllRoomSummariesById(Set.of("creator-1", "user-1"));
         verify(recentMessageCounter).countRecentMessages(List.of("room-1"));
         verify(userRepository, never()).findById(anyString());
         verify(recentMessageCounter, never()).countRecentMessages(anyString());
@@ -107,7 +105,7 @@ class RoomServiceTest {
         when(roomRepository.addParticipantAndReturn("room-1", "user-1"))
                 .thenReturn(Optional.of(updatedRoom));
         when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(participant));
-        when(userRepository.findAllById(Set.of("creator-1", "user-1")))
+        when(userRepository.findAllRoomSummariesById(Set.of("creator-1", "user-1")))
                 .thenReturn(List.of(creator, participant));
         when(recentMessageCounter.countRecentMessages(List.of("room-1")))
                 .thenReturn(Map.of("room-1", 3));
