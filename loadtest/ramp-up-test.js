@@ -663,9 +663,9 @@ class RampUpLoadTester {
         // 같은 방의 다른 사용자 메시지도 broadcast로 수신되므로 이 필터가 필수.
         const myServerId = user._id || user.id;
         if (data.content && data.sender && data.sender.id === myServerId) {
-          const match = String(data.content).match(/__ts(\d+)__/);
+          const match = String(data.content).match(/__ts([\d.]+)__/);
           if (match) {
-            const rtt = Date.now() - Number(match[1]);
+            const rtt = Date.now() - Number(match[1].replaceAll('.', ''));
             if (rtt >= 0) {
               addSample(this.metrics.socketRing, rtt);
             }
@@ -796,11 +796,14 @@ class RampUpLoadTester {
       try {
         // content에 송신 시각을 __ts<epoch>__로 실어 echo RTT를 상관한다.
         // (기존 emit 직후 시간차 측정은 로컬 큐잉 시간이라 폐기 — spec §1.1/§3.3)
-        const ts = Date.now();
+        // 숫자 13자리를 그대로 넣으면 임의 문자열 기반 금칙어 사전의 짧은 숫자
+        // 토큰과 우연히 겹칠 수 있다. 각 자릿수를 구분해 RTT 정보는 유지하면서
+        // 콘텐츠 필터가 부하 측정 결과를 오염시키지 않게 한다.
+        const ts = String(Date.now()).split('').join('.');
         socket.emit(CLIENT_EMIT.CHAT_MESSAGE, {
           room: roomId,
           type: 'text',
-          content: `__ts${ts}__ Ramp-up test message from user ${userId}`
+          content: `__ts${ts}__ Ramp-up test message`
         });
 
         this.metrics.messagesSent++;
