@@ -13,25 +13,58 @@ vi.mock('@/services/axios', () => ({
 
 const roomsResponse = (rooms) => ({ data: { data: rooms } });
 
-const renderRoomList = () =>
-  renderHook(() =>
-    useRoomList({
-      currentUser: { token: 'token-1' },
-      router: { push: vi.fn() },
-      connectionStatus: CONNECTION_STATUS.CONNECTED,
-      setConnectionStatus: vi.fn(),
-      retryCount: 0,
-      setRetryCount: vi.fn(),
-      isRetrying: false,
-      setIsRetrying: vi.fn(),
-      getRetryDelay: vi.fn(() => 1000),
-      attemptConnection: vi.fn(() => Promise.resolve(true)),
-    })
-  );
+const renderRoomList = (overrides = {}) => {
+  const dependencies = {
+    currentUser: { token: 'token-1' },
+    router: { push: vi.fn() },
+    connectionStatus: CONNECTION_STATUS.CONNECTED,
+    setConnectionStatus: vi.fn(),
+    retryCount: 0,
+    setRetryCount: vi.fn(),
+    isRetrying: false,
+    setIsRetrying: vi.fn(),
+    getRetryDelay: vi.fn(() => 1000),
+    attemptConnection: vi.fn(() => Promise.resolve(true)),
+    ...overrides,
+  };
+
+  return {
+    ...renderHook(() => useRoomList(dependencies)),
+    dependencies,
+  };
+};
 
 describe('useRoomList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it('starts loading rooms immediately but waits for the health check before exposing them', async () => {
+    let resolveHealth;
+    const attemptConnection = vi.fn(
+      () => new Promise((resolve) => {
+        resolveHealth = resolve;
+      })
+    );
+    axiosInstance.get.mockResolvedValue(roomsResponse([{ _id: 'room-1' }]));
+
+    const { result } = renderRoomList({ attemptConnection });
+    let fetchPromise;
+
+    act(() => {
+      fetchPromise = result.current.fetchRooms();
+    });
+
+    expect(axiosInstance.get).toHaveBeenCalledWith('/api/rooms');
+    expect(attemptConnection).toHaveBeenCalledTimes(1);
+    expect(result.current.rooms).toEqual([]);
+
+    await act(async () => {
+      resolveHealth(true);
+      await fetchPromise;
+    });
+
+    expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
   });
 
   it('replaces the list on refresh without leaving the refreshing flag on', async () => {
