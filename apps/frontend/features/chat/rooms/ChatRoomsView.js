@@ -85,24 +85,32 @@ export default function ChatRoomsView({
     let retryTimer = null;
     let cancelled = false;
 
-    const initFetch = async () => {
+    const initFetch = async (retryAttempt = 0) => {
+      let succeeded = false;
+
       try {
         if (hasInitialRooms) {
           // SSR 결과가 있어도 기존 /api/health 관찰 흐름은 유지한다.
-          await attemptConnection();
+          succeeded = await attemptConnection();
         } else {
-          await fetchRooms();
+          // SSR bootstrap이 실패한 경우에는 빈 목록을 정상 데이터로
+          // 간주하지 않고 브라우저에서 방 목록을 다시 조회한다.
+          succeeded = await fetchRooms();
         }
       } catch (error) {
+        succeeded = false;
+      }
+
+      // fetchRooms handles its own error state and returns false; attemptConnection
+      // rejects on failure. Retry a few times so a transient /api/rooms failure
+      // does not leave the page permanently stuck without join buttons.
+      if (succeeded === false && !cancelled && retryAttempt < 4) {
+        const delay = Math.min(3000 * (2 ** retryAttempt), 10000);
         retryTimer = setTimeout(() => {
           if (!cancelled) {
-            if (hasInitialRooms) {
-              attemptConnection();
-            } else {
-              fetchRooms();
-            }
+            initFetch(retryAttempt + 1);
           }
-        }, 3000);
+        }, delay);
       }
     };
 

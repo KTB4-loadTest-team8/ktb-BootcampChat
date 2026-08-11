@@ -4,7 +4,11 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import ChatRoomsView from '@/features/chat/rooms/ChatRoomsView';
 
-export default function ChatRoomsClient({ initialRooms, initialConnectionStatus }) {
+export default function ChatRoomsClient({
+  initialRooms,
+  initialConnectionStatus,
+  hasInitialRooms = false,
+}) {
   const router = useRouter();
 
   useEffect(() => {
@@ -15,7 +19,7 @@ export default function ChatRoomsClient({ initialRooms, initialConnectionStatus 
     <ChatRoomsView
       router={router}
       initialRooms={initialRooms}
-      hasInitialRooms
+      hasInitialRooms={hasInitialRooms}
       initialConnectionStatus={initialConnectionStatus}
     />
   );

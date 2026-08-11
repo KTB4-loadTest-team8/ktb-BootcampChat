@@ -34,7 +34,14 @@ export const loadInitialChatData = async (session) => {
     readJson(healthResponse),
   ]);
 
-  if (!roomsResponse.ok || !Array.isArray(roomsPayload?.data)) {
+  // The backend may return HTTP 200 with { success: false, data: [] } when
+  // loading the snapshot fails. Treat that as a failed bootstrap rather than
+  // hydrating the UI with an indistinguishable, permanently empty room list.
+  if (
+    !roomsResponse.ok ||
+    roomsPayload?.success === false ||
+    !Array.isArray(roomsPayload?.data)
+  ) {
     throw new Error('ROOMS_FETCH_FAILED');
   }
 

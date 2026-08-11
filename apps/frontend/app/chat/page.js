@@ -29,6 +29,7 @@ async function RoomsStream({ session }) {
     return (
       <ChatRoomsClient
         initialRooms={[]}
+        hasInitialRooms={false}
         initialConnectionStatus="checking"
       />
     );
@@ -41,6 +42,7 @@ async function RoomsStream({ session }) {
   return (
     <ChatRoomsClient
       initialRooms={initialData.rooms}
+      hasInitialRooms
       initialConnectionStatus={initialData.connected ? 'connected' : 'checking'}
     />
   );
