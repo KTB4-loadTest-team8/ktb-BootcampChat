@@ -151,7 +151,7 @@ public class RoomService {
         return roomRepository.findById(roomId);
     }
 
-    public Room joinRoom(String roomId, String password, String name) {
+    public RoomResponse joinRoom(String roomId, String password, String name) {
         Optional<Room> roomOpt = roomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {
             return null;
@@ -175,15 +175,16 @@ public class RoomService {
             room = roomRepository.save(room);
         }
         
+        RoomResponse roomResponse = mapToRoomResponse(room, name);
+
         // Publish event for room updated
         try {
-            RoomResponse roomResponse = mapToRoomResponse(room, name);
             eventPublisher.publishEvent(new RoomUpdatedEvent(this, roomId, roomResponse));
         } catch (Exception e) {
             log.error("roomUpdate 이벤트 발행 실패", e);
         }
 
-        return room;
+        return roomResponse;
     }
 
     private RoomResponse mapToRoomResponse(Room room, String name) {
