@@ -11,6 +11,7 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.serializer.GenericJacksonJsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializationContext;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
+import org.springframework.data.redis.core.RedisTemplate;
 
 /**
  * Shared Redis cache configuration for read-heavy API responses.
@@ -26,17 +27,41 @@ public class RedisCacheConfig {
     private long roomsCacheTtlSeconds;
 
     @Bean
-    public RedisCacheManager redisCacheManager(RedisConnectionFactory connectionFactory) {
-        var valueSerializer = GenericJacksonJsonRedisSerializer.builder()
+    public GenericJacksonJsonRedisSerializer redisValueSerializer() {
+        return GenericJacksonJsonRedisSerializer.builder()
                 .enableUnsafeDefaultTyping()
                 .build();
+    }
+
+    /**
+     * Sessions use the same typed JSON representation as the application cache,
+     * while their expiry is managed explicitly by {@code SessionRedisStore}.
+     */
+    @Bean
+    public RedisTemplate<String, Object> sessionRedisTemplate(
+            RedisConnectionFactory connectionFactory,
+            GenericJacksonJsonRedisSerializer redisValueSerializer
+    ) {
+        var template = new RedisTemplate<String, Object>();
+        template.setConnectionFactory(connectionFactory);
+        template.setKeySerializer(new StringRedisSerializer());
+        template.setValueSerializer(redisValueSerializer);
+        template.afterPropertiesSet();
+        return template;
+    }
+
+    @Bean
+    public RedisCacheManager redisCacheManager(
+            RedisConnectionFactory connectionFactory,
+            GenericJacksonJsonRedisSerializer redisValueSerializer
+    ) {
         var cacheConfiguration = RedisCacheConfiguration.defaultCacheConfig()
                 .entryTtl(Duration.ofSeconds(roomsCacheTtlSeconds))
                 .disableCachingNullValues()
                 .serializeKeysWith(RedisSerializationContext.SerializationPair
                         .fromSerializer(new StringRedisSerializer()))
                 .serializeValuesWith(RedisSerializationContext.SerializationPair
-                        .fromSerializer(valueSerializer));
+                        .fromSerializer(redisValueSerializer));
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(cacheConfiguration)
