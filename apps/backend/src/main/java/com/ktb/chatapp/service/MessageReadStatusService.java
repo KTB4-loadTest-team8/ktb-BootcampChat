@@ -1,7 +1,10 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.model.Message;
-import com.ktb.chatapp.repository.MessageRepository;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
+import org.springframework.data.mongodb.core.query.Update;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +20,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class MessageReadStatusService {
 
-    private final MessageRepository messageRepository;
+    private final MongoTemplate mongoTemplate;
 
     /**
      * 메시지 읽음 상태 업데이트
@@ -36,23 +39,35 @@ public class MessageReadStatusService {
                 .build();
 
         try {
-            for (String messageId : messageIds) {
-                var messageOptional = messageRepository.findById(messageId);
-                if (messageOptional.isPresent()) {
-                    var message = messageOptional.get();
-                    if (message.getReaders() == null) {
-                        message.setReaders(new ArrayList<>());
-                    }
-                    boolean alreadyRead = message.getReaders().stream()
-                            .anyMatch(r -> r.getUserId().equals(userId));
-                    if (!alreadyRead) {
-                        message.getReaders().add(readerInfo);
-                    }
-                    messageRepository.save(message);
-                }
-            }
+            // 기존 데이터 중 readers가 null인 문서도 기존 로직처럼 빈 배열로 초기화
+            Query nullReadersQuery = Query.query(
+                    Criteria.where("_id")
+                            .in(messageIds)
+                            .and("readers").is(null)
+            );
+
+            mongoTemplate.updateMulti(
+                    nullReadersQuery,
+                    new Update().set("readers", new ArrayList<>()),
+                    Message.class
+            );
+
+            // 해당 사용자가 아직 읽지 않은 메시지에만 읽음 정보 추가
+            Query unreadMessagesQuery = Query.query(
+                    Criteria.where("_id")
+                            .in(messageIds)
+                            .and("readers.userId").ne(userId)
+            );
+
+            mongoTemplate.updateMulti(
+                    unreadMessagesQuery,
+                    new Update().push("readers", readerInfo),
+                    Message.class
+            );
+
             log.debug("Read status updated for {} messages by user {}",
                     messageIds.size(), userId);
+
         } catch (Exception e) {
             log.error("Read status update error for user {}", userId, e);
         }
