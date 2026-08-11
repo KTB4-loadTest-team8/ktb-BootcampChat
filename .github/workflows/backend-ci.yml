@@ -91,3 +91,4 @@ jobs:
           name: backend-jar-${{ github.sha }}
           path: apps/backend/target/ktb-chat-backend-0.0.1-SNAPSHOT.jar
           retention-days: 7
+          
