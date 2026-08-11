@@ -24,6 +24,7 @@ const ChatInput = forwardRef(({
   const emojiButtonRef = useRef(null);
   const dropZoneRef = useRef(null);
   const internalInputRef = useRef(null);
+  const isComposingRef = useRef(false);
   const messageInputRef = ref || internalInputRef;
 
   const {
@@ -280,6 +281,15 @@ const ChatInput = forwardRef(({
   }, [insertMention, messageInputRef]);
 
   const handleKeyDown = useCallback((e) => {
+    const nativeEvent = e.nativeEvent || e;
+    if (
+      isComposingRef.current ||
+      nativeEvent.isComposing ||
+      nativeEvent.keyCode === 229
+    ) {
+      return;
+    }
+
     if (showMentionList) {
       const participants = getFilteredParticipants(room); // room 객체 전달
       const participantsCount = participants.length;
@@ -410,6 +420,13 @@ const ChatInput = forwardRef(({
                   value={message}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
+                  onCompositionStart={() => {
+                    isComposingRef.current = true;
+                  }}
+                  onCompositionEnd={(e) => {
+                    isComposingRef.current = false;
+                    setMessage(e.currentTarget.value);
+                  }}
                   placeholder={isDragging ? "파일을 여기에 놓아주세요." : "메시지를 입력하세요... (@를 입력하여 멘션, Shift + Enter로 줄바꿈)"}
                   disabled={isDisabled}
                   rows={1}
