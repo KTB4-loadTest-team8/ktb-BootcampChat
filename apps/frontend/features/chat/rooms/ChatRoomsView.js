@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { ErrorCircleIcon, NetworkIcon, RefreshOutlineIcon } from '@vapor-ui/icons';
-import { Button, Text, Badge, Callout, Box, VStack, HStack, Spinner } from '@vapor-ui/core';
+import { Button, Text, Badge, Callout, Box, VStack, HStack } from '@vapor-ui/core';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRoomsSocket } from './useRoomsSocket';
 import {
@@ -8,7 +8,7 @@ import {
   CONNECTION_STATUS,
 } from './useServerConnection';
 import { useRoomList } from './useRoomList';
-import RoomsTable, { ROOMS_TABLE_HEIGHT } from './RoomsTable';
+import RoomsTable, { ROOMS_TABLE_HEIGHT, RoomsTableSkeleton } from './RoomsTable';
 import ConnectionErrorBanner from '@/components/ConnectionErrorBanner';
 
 const STATUS_CONFIG = {
@@ -20,13 +20,8 @@ const STATUS_CONFIG = {
 };
 
 const ROOM_LIST_REFRESH_INTERVAL = 30000;
-
-const LoadingIndicator = ({ text }) => (
-  <HStack $css={{ gap: '$200', justifyContent: 'center', alignItems: 'center' }}>
-    <Spinner size="md" colorPalette="primary" aria-label={text} />
-    <Text typography="body2">{text}</Text>
-  </HStack>
-);
+const STATUS_BADGE_WIDTH = 112;
+const HEADER_ACTION_WIDTH = 104;
 
 export default function ChatRoomsView({
   router,
@@ -90,24 +85,32 @@ export default function ChatRoomsView({
     let retryTimer = null;
     let cancelled = false;
 
-    const initFetch = async () => {
+    const initFetch = async (retryAttempt = 0) => {
+      let succeeded = false;
+
       try {
         if (hasInitialRooms) {
           // SSR 결과가 있어도 기존 /api/health 관찰 흐름은 유지한다.
-          await attemptConnection();
+          succeeded = await attemptConnection();
         } else {
-          await fetchRooms();
+          // SSR bootstrap이 실패한 경우에는 빈 목록을 정상 데이터로
+          // 간주하지 않고 브라우저에서 방 목록을 다시 조회한다.
+          succeeded = await fetchRooms();
         }
       } catch (error) {
+        succeeded = false;
+      }
+
+      // fetchRooms handles its own error state and returns false; attemptConnection
+      // rejects on failure. Retry a few times so a transient /api/rooms failure
+      // does not leave the page permanently stuck without join buttons.
+      if (succeeded === false && !cancelled && retryAttempt < 4) {
+        const delay = Math.min(3000 * (2 ** retryAttempt), 10000);
         retryTimer = setTimeout(() => {
           if (!cancelled) {
-            if (hasInitialRooms) {
-              attemptConnection();
-            } else {
-              fetchRooms();
-            }
+            initFetch(retryAttempt + 1);
           }
-        }, 3000);
+        }, delay);
       }
     };
 
@@ -168,7 +171,7 @@ export default function ChatRoomsView({
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        minHeight: '100vh',
+        minHeight: 'calc(100vh - 72px)',
         padding: '$300',
       }}
     >
@@ -188,8 +191,19 @@ export default function ChatRoomsView({
             $css={{ gap: '$300', alignItems: 'center', justifyContent: 'space-between' }}
           >
             <Text typography="heading3">채팅방 목록</Text>
-            <HStack $css={{ gap: '$200' }}>
-              <Badge colorPalette={STATUS_CONFIG[connectionStatus]?.color || 'danger'}>
+            <HStack
+              $css={{ gap: '$200', justifyContent: 'flex-end' }}
+              style={{ minWidth: `${STATUS_BADGE_WIDTH + HEADER_ACTION_WIDTH + 8}px` }}
+            >
+              <Badge
+                colorPalette={STATUS_CONFIG[connectionStatus]?.color || 'danger'}
+                style={{
+                  display: 'inline-flex',
+                  justifyContent: 'center',
+                  width: `${STATUS_BADGE_WIDTH}px`,
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {STATUS_CONFIG[connectionStatus].label}
               </Badge>
               {error || connectionStatus === CONNECTION_STATUS.ERROR ? (
@@ -198,6 +212,7 @@ export default function ChatRoomsView({
                   size="sm"
                   onClick={() => fetchRooms()}
                   disabled={isRetrying}
+                  style={{ width: `${HEADER_ACTION_WIDTH}px` }}
                 >
                   <RefreshOutlineIcon size={16} />
                   재연결
@@ -209,6 +224,7 @@ export default function ChatRoomsView({
                   onClick={() => refreshRooms()}
                   disabled={refreshing || loading}
                   data-testid="refresh-rooms-button"
+                  style={{ width: `${HEADER_ACTION_WIDTH}px` }}
                 >
                   <RefreshOutlineIcon size={16} />
                   {refreshing ? '갱신 중' : '새로고침'}
@@ -217,47 +233,60 @@ export default function ChatRoomsView({
             </HStack>
           </HStack>
         </VStack>
-
-        
-        {error && (
-          <Callout.Root
-            colorPalette={error.type === 'danger' ? 'danger' : error.type === 'warning' ? 'warning' : 'primary'}
-          >
-            <HStack $css={{ gap: '$200', alignItems: 'flex-start' }}>
-              <Callout.Icon>
-                {connectionStatus === CONNECTION_STATUS.ERROR ? (
-                  <NetworkIcon size={18} />
-                ) : (
-                  <ErrorCircleIcon size={18} />
-                )}
-              </Callout.Icon>
-              <VStack $css={{ gap: '$150', alignItems: 'flex-start' }}>
-                <Text typography="subtitle2" style={{ fontWeight: 500 }}>{error.title}</Text>
-                <Text typography="body2">{error.message}</Text>
-                {error.showRetry && !isRetrying && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fetchRooms()}
-                  >
-                    다시 시도
-                  </Button>
-                )}
-              </VStack>
-            </HStack>
-          </Callout.Root>
-        )}
-
         <Box
           data-testid="rooms-list-surface"
-          style={{ minHeight: `${ROOMS_TABLE_HEIGHT}px` }}
+          style={{
+            height: `${ROOMS_TABLE_HEIGHT}px`,
+            minHeight: `${ROOMS_TABLE_HEIGHT}px`,
+            overflow: 'hidden',
+            position: 'relative',
+          }}
         >
+          {error && (
+            <Box
+              data-testid="rooms-error-overlay"
+              aria-live="polite"
+              style={{
+                position: 'absolute',
+                top: '16px',
+                left: '16px',
+                right: '16px',
+                zIndex: 2,
+              }}
+            >
+              <Callout.Root
+                colorPalette={error.type === 'danger' ? 'danger' : error.type === 'warning' ? 'warning' : 'primary'}
+              >
+                <HStack $css={{ gap: '$200', alignItems: 'flex-start' }}>
+                  <Callout.Icon>
+                    {connectionStatus === CONNECTION_STATUS.ERROR ? (
+                      <NetworkIcon size={18} />
+                    ) : (
+                      <ErrorCircleIcon size={18} />
+                    )}
+                  </Callout.Icon>
+                  <VStack $css={{ gap: '$150', alignItems: 'flex-start' }}>
+                    <Text typography="subtitle2" style={{ fontWeight: 500 }}>{error.title}</Text>
+                    <Text typography="body2">{error.message}</Text>
+                    {error.showRetry && !isRetrying && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => fetchRooms()}
+                      >
+                        다시 시도
+                      </Button>
+                    )}
+                  </VStack>
+                </HStack>
+              </Callout.Root>
+            </Box>
+          )}
+
           {connectionStatus === CONNECTION_STATUS.ERROR ? (
             <ConnectionErrorBanner message="채팅 서버와 연결할 수 없습니다. 잠시 후 다시 시도해주세요." />
           ) : loading ? (
-            <Box $css={{ padding: '$400' }}>
-              <LoadingIndicator text="채팅방 목록을 불러오는 중..." />
-            </Box>
+            <RoomsTableSkeleton />
           ) : roomOrder.length > 0 ? (
             <RoomsTable
               roomOrder={roomOrder}

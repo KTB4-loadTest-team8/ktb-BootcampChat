@@ -138,7 +138,10 @@ export const useRoomList = ({
       throw error;
     }
 
-    if (!response?.data?.data) {
+    if (
+      response?.data?.success === false ||
+      !Array.isArray(response?.data?.data)
+    ) {
       throw new Error('INVALID_RESPONSE');
     }
 
@@ -147,7 +150,7 @@ export const useRoomList = ({
 
   const fetchRooms = useCallback(async () => {
     if (!currentUser?.token || isLoadingRef.current) {
-      return;
+      return false;
     }
 
     try {
@@ -161,8 +164,11 @@ export const useRoomList = ({
       if (isInitialLoad) {
         setIsInitialLoad(false);
       }
+
+      return true;
     } catch (error) {
       handleFetchError(error);
+      return false;
     } finally {
       setLoading(false);
       isLoadingRef.current = false;

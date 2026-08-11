@@ -1,7 +1,7 @@
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import RoomsTable, { ROOM_ROW_HEIGHT } from '../RoomsTable';
+import RoomsTable, { ROOM_ROW_HEIGHT, RoomsTableSkeleton } from '../RoomsTable';
 import { CONNECTION_STATUS } from '../useServerConnection';
 
 const createRooms = (count) => Array.from({ length: count }, (_, index) => ({
@@ -21,6 +21,14 @@ const createRoomIndex = (count) => {
 };
 
 describe('RoomsTable', () => {
+  it('keeps the loading skeleton at the same height as the room table', () => {
+    render(<RoomsTableSkeleton />);
+
+    expect(screen.getByTestId('rooms-table-skeleton').style.height).toBe('430px');
+    expect(screen.getByText('채팅방')).toBeTruthy();
+    expect(screen.getByText('액션')).toBeTruthy();
+  });
+
   it('renders the first room immediately without mounting every room', () => {
     const onJoinRoom = vi.fn();
     render(

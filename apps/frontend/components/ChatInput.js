@@ -49,6 +49,8 @@ const ChatInput = forwardRef(({
   const [uploadError, setUploadError] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 0 });
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const handleFileValidationAndPreview = useCallback(async (file) => {
     if (!file) return;
@@ -103,36 +105,81 @@ const ChatInput = forwardRef(({
   const handleSubmit = useCallback(async (e) => {
     e?.preventDefault();
 
+    // A file submit spans an HTTP upload and a socket acknowledgement. Keep a
+    // synchronous ref guard so a second click/Enter cannot start a duplicate
+    // upload before React has committed the disabled state.
+    if (submittingRef.current) return;
+
+    const waitForSubmission = (payload) => {
+      const result = onSubmit(payload);
+      // Keep synchronous test/lightweight handlers synchronous while still
+      // awaiting the real async upload + socket ACK path.
+      if (result && typeof result.then === 'function') {
+        return result.then((resolved) => resolved !== false);
+      }
+      return result !== false;
+    };
+
     if (files.length > 0) {
+      submittingRef.current = true;
+      setSubmitting(true);
       try {
         const file = files[0];
         if (!file || !file.file) {
           throw new Error('파일이 선택되지 않았습니다.');
         }
 
-        onSubmit({
+        const pendingSubmission = waitForSubmission({
           type: 'file',
           content: message.trim(),
           fileData: file
         });
+        const submitted = pendingSubmission && typeof pendingSubmission.then === 'function'
+          ? await pendingSubmission
+          : pendingSubmission;
+
+        // useMessageHandling returns false when upload or socket delivery
+        // fails. Preserve the preview so the user can retry the same file.
+        if (!submitted) return;
 
         setMessage('');
         setShowEmojiPicker(false);
         setShowMentionList(false);
+        files.forEach((filePreview) => {
+          if (filePreview?.url) URL.revokeObjectURL(filePreview.url);
+        });
         setFiles([]);
 
       } catch (error) {
         console.error('File submit error:', error);
         setUploadError(error.message);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
       }
     } else if (message.trim()) {
-      onSubmit({
-        type: 'text',
-        content: message.trim()
-      });
-      setMessage('');
-      setShowEmojiPicker(false);
-      setShowMentionList(false);
+      submittingRef.current = true;
+      setSubmitting(true);
+      try {
+        const pendingSubmission = waitForSubmission({
+          type: 'text',
+          content: message.trim()
+        });
+        const submitted = pendingSubmission && typeof pendingSubmission.then === 'function'
+          ? await pendingSubmission
+          : pendingSubmission;
+
+        if (!submitted) return;
+
+        setMessage('');
+        setShowEmojiPicker(false);
+        setShowMentionList(false);
+      } catch (error) {
+        console.error('Message submit error:', error);
+      } finally {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
     }
   }, [files, message, onSubmit, setMessage, setShowEmojiPicker, setShowMentionList]);
 
@@ -369,7 +416,7 @@ const ChatInput = forwardRef(({
     }, 0);
   }, [message, setMessage, setShowEmojiPicker, messageInputRef]);
 
-  const isDisabled = disabled || uploading || externalUploading;
+  const isDisabled = disabled || uploading || externalUploading || submitting;
 
   return (
     <>
@@ -400,7 +447,7 @@ const ChatInput = forwardRef(({
           >
             <FilePreview
               files={files}
-              uploading={uploading}
+              uploading={uploading || submitting}
               uploadProgress={uploadProgress}
               uploadError={uploadError}
               onRemove={handleFileRemove}
