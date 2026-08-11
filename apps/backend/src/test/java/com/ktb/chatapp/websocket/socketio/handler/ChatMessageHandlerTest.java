@@ -27,6 +27,7 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.RejectedExecutionException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -139,6 +140,10 @@ class ChatMessageHandlerTest {
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(bannedWordChecker.containsBannedWord("hello")).thenReturn(false);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
+        doThrow(new RejectedExecutionException("executor closed"))
+                .when(roomActivityNotifier).notifyMessageStoredAsync("room-1");
+        doThrow(new RejectedExecutionException("executor closed"))
+                .when(sessionService).updateLastActivityAsync("user-1");
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
             message.setId("message-1");
@@ -158,8 +163,18 @@ class ChatMessageHandlerTest {
 
         ArgumentCaptor<MessageResponse> payloadCaptor = ArgumentCaptor.forClass(MessageResponse.class);
         verify(client).sendEvent(eq(MESSAGE), payloadCaptor.capture());
+        verify(client, never()).sendEvent(eq(ERROR), any());
         verify(roomOperations).sendEvent(eq(MESSAGE), any(MessageResponse.class));
-        verify(roomActivityNotifier).notifyMessageStored("room-1");
+        verify(roomActivityNotifier).notifyMessageStoredAsync("room-1");
+        verify(sessionService).updateLastActivityAsync("user-1");
+        org.assertj.core.api.Assertions.assertThat(meterRegistry.get("chat.messages.side.effect.errors")
+                .tag("operation", "room_activity_schedule")
+                .counter()
+                .count()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(meterRegistry.get("chat.messages.side.effect.errors")
+                .tag("operation", "session_activity_schedule")
+                .counter()
+                .count()).isEqualTo(1);
         org.junit.jupiter.api.Assertions.assertEquals("message-1", payloadCaptor.getValue().getId());
         org.junit.jupiter.api.Assertions.assertEquals("hello", payloadCaptor.getValue().getContent());
     }
