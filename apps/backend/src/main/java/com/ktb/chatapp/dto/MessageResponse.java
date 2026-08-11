@@ -1,8 +1,8 @@
 package com.ktb.chatapp.dto;
 
 import com.ktb.chatapp.model.AiType;
-import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
 import java.util.Map;
@@ -19,6 +19,7 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class MessageResponse {
     @JsonProperty("_id")
     private String id;
@@ -41,8 +42,5 @@ public class MessageResponse {
     
     private Map<String, Set<String>> reactions;
     
-    private List<Message.MessageReader> readers;
-    
-    // metadata는 자유 형식 (Map<String, Object>)
-    private Map<String, Object> metadata;
+    private List<MessageReaderResponse> readers;
 }

@@ -291,7 +291,7 @@ public class RoomController {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(userIds)
+        userRepository.findAllRoomSummariesById(userIds)
                 .forEach(user -> usersById.put(user.getId(), user));
 
         User creator = usersById.get(room.getCreator());
@@ -333,7 +333,7 @@ public class RoomController {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(userIds)
+        userRepository.findAllRoomSummariesById(userIds)
                 .forEach(user -> usersById.put(user.getId(), user));
 
         User creator = usersById.get(room.getCreator());

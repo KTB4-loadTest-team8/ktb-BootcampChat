@@ -59,7 +59,7 @@ class MessageFetchHandlerTest {
 
         when(client.get("user"))
                 .thenReturn(new SocketUser("user-1", "tester", "session-1", "socket-1"));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(roomRepository.findRoomForReadById("room-1")).thenReturn(Optional.of(room));
         when(messageLoader.loadMessages(request, "user-1")).thenReturn(response);
 
         handler.handleFetchMessages(client, request);

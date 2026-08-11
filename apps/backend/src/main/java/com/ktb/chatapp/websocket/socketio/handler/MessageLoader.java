@@ -84,7 +84,7 @@ public class MessageLoader {
         Pageable pageable = PageRequest.of(0, limit, Sort.by("timestamp").descending());
 
         Slice<Message> messagePage =
-                messageRepository.findByRoomIdAndTimestampBefore(roomId, before, pageable);
+                messageRepository.findChatMessagesByRoomIdAndTimestampBefore(roomId, before, pageable);
 
         List<Message> messages = messagePage.getContent();
 
@@ -123,7 +123,7 @@ public class MessageLoader {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(senderIds)
+        userRepository.findAllRoomSummariesById(senderIds)
                 .forEach(user -> usersById.put(user.getId(), user));
         return usersById;
     }

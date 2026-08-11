@@ -42,7 +42,7 @@ public class MessageFetchHandler {
         
         try {
             // 권한 체크
-            Room room = roomRepository.findById(data.roomId()).orElse(null);
+            Room room = roomRepository.findRoomForReadById(data.roomId()).orElse(null);
             if (room == null || !room.getParticipantIds().contains(userId)) {
                 client.sendEvent(ERROR, Map.of(
                         "code", "LOAD_ERROR",

@@ -143,7 +143,7 @@ public class RoomService {
     }
 
     public Optional<Room> findRoomById(String roomId) {
-        return roomRepository.findById(roomId);
+        return roomRepository.findRoomForReadById(roomId);
     }
 
     @CacheEvict(cacheNames = ROOMS_CACHE, allEntries = true)
@@ -248,13 +248,24 @@ public class RoomService {
             .id(snapshot.getId())
             .name(snapshot.getName())
             .hasPassword(snapshot.isHasPassword())
-            .creator(snapshot.getCreator())
-            .participants(snapshot.getParticipants())
+            .creator(toIdOnlyUser(snapshot.getCreator()))
+            .participants(toIdOnlyUsers(snapshot.getParticipants()))
             .createdAtDateTime(snapshot.getCreatedAtDateTime())
             // 기존 isCreator 비교 규칙을 유지해 API 동작을 바꾸지 않는다.
             .isCreator(snapshot.getCreator() != null && snapshot.getCreator().getId().equals(name))
             .recentMessageCount(snapshot.getRecentMessageCount())
             .build();
+    }
+
+    private UserResponse toIdOnlyUser(UserResponse user) {
+        return user == null ? null : UserResponse.builder().id(user.getId()).build();
+    }
+
+    private List<UserResponse> toIdOnlyUsers(List<UserResponse> users) {
+        if (users == null) {
+            return List.of();
+        }
+        return users.stream().map(this::toIdOnlyUser).toList();
     }
 
     private Map<String, User> findUsersByRoomIds(List<Room> rooms) {
@@ -273,7 +284,7 @@ public class RoomService {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(userIds)
+        userRepository.findAllRoomSummariesById(userIds)
                 .forEach(user -> usersById.put(user.getId(), user));
         return usersById;
     }

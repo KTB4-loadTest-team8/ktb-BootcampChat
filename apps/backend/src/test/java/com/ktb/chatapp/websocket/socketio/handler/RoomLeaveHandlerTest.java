@@ -96,8 +96,8 @@ class RoomLeaveHandlerTest {
         when(client.get("user")).thenReturn(socketUser);
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(true);
         when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
-        when(userRepository.findAllById(Set.of("user-2"))).thenReturn(List.of(remainingUser));
-        when(roomRepository.findById("room-1"))
+        when(userRepository.findAllRoomSummariesById(Set.of("user-2"))).thenReturn(List.of(remainingUser));
+        when(roomRepository.findRoomForReadById("room-1"))
                 .thenReturn(Optional.of(roomBeforeLeave), Optional.of(roomAfterLeave));
         when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
             Message message = invocation.getArgument(0);
@@ -121,7 +121,7 @@ class RoomLeaveHandlerTest {
         var participants = (java.util.List<UserResponse>) participantsCaptor.getValue();
         assertEquals(List.of("user-2"), participants.stream().map(UserResponse::getId).toList());
         verify(roomOperations, never()).sendEvent(eq("userLeft"), any());
-        verify(userRepository).findAllById(Set.of("user-2"));
+        verify(userRepository).findAllRoomSummariesById(Set.of("user-2"));
         verify(userRepository, never()).findById("user-2");
     }
 }

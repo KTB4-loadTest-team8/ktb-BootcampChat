@@ -52,7 +52,7 @@ public class RoomJoinHandler {
             
             // SocketUser는 AuthTokenListenerImpl에서 JWT와 사용자 존재를 검증한 뒤 주입된다.
             // 여기서 같은 사용자를 다시 단건 조회하지 않고, 참가자 응답을 만들 때의 batch 조회를 재사용한다.
-            Room room = roomRepository.findById(roomId).orElse(null);
+            Room room = roomRepository.findRoomForReadById(roomId).orElse(null);
             if (room == null) {
                 metricStatus = "room_not_found";
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
@@ -130,7 +130,7 @@ public class RoomJoinHandler {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(room.getParticipantIds())
+        userRepository.findAllRoomSummariesById(room.getParticipantIds())
                 .forEach(user -> usersById.put(user.getId(), user));
 
         return room.getParticipantIds().stream()

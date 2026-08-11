@@ -25,12 +25,12 @@ class RoomListSnapshotServiceTest {
     @Mock private RecentMessageCounter recentMessageCounter;
 
     @Test
-    void getRoomSnapshots_shouldBatchUsersAndRecentMessageCounts() {
+    void getRoomSnapshots_shouldBatchUserSummariesAndRecentMessageCounts() {
         Room olderRoom = room("room-1", "creator-1", Set.of("creator-1", "user-1"), 1);
         Room newerRoom = room("room-2", "creator-2", Set.of("creator-2", "user-1", "user-2"), 2);
 
         when(roomRepository.findAll()).thenReturn(List.of(olderRoom, newerRoom));
-        when(userRepository.findAllById(Set.of("creator-1", "creator-2", "user-1", "user-2")))
+        when(userRepository.findAllRoomSummariesById(Set.of("creator-1", "creator-2", "user-1", "user-2")))
                 .thenReturn(List.of(
                         user("creator-1"), user("creator-2"), user("user-1"), user("user-2")
                 ));
@@ -42,7 +42,7 @@ class RoomListSnapshotServiceTest {
 
         assertThat(result).extracting("id").containsExactly("room-2", "room-1");
         assertThat(result).extracting("recentMessageCount").containsExactly(7, 3);
-        verify(userRepository).findAllById(Set.of("creator-1", "creator-2", "user-1", "user-2"));
+        verify(userRepository).findAllRoomSummariesById(Set.of("creator-1", "creator-2", "user-1", "user-2"));
         verify(recentMessageCounter).countRecentMessages(List.of("room-1", "room-2"));
     }
 

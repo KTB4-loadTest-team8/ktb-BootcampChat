@@ -86,7 +86,7 @@ class MessageLoaderTest {
                 ))
                 .toList();
         
-        lenient().when(userRepository.findAllById(anySet()))
+        lenient().when(userRepository.findAllRoomSummariesById(anySet()))
                 .thenReturn(List.of(testUser));
         lenient().doNothing().when(messageReadStatusService).updateReadStatusAsync(anyList(), anyString());
     }
@@ -111,7 +111,7 @@ class MessageLoaderTest {
         // [21시간 전, 22시간 전, ..., 50시간 전]
         var messageSlice = getMessageSlice(first30Messages, true);
         
-        when(messageRepository.findByRoomIdAndTimestampBefore(
+        when(messageRepository.findChatMessagesByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
                 .thenReturn(messageSlice);
         
@@ -122,7 +122,7 @@ class MessageLoaderTest {
         // Then: 결과는 오름차순으로 정렬되어야 함
         assertThat(result.getMessages()).hasSize(30);
         assertThat(result.isHasMore()).isTrue();
-        verify(userRepository).findAllById(Set.of(userId));
+        verify(userRepository).findAllRoomSummariesById(Set.of(userId));
         verify(userRepository, never()).findById(anyString());
         verify(fileRepository, never()).findById(anyString());
         verify(messageReadStatusService).updateReadStatusAsync(anyList(), eq(userId));
@@ -152,10 +152,10 @@ class MessageLoaderTest {
         File file1 = File.builder().id("file-1").filename("first.png").build();
         File file2 = File.builder().id("file-2").filename("second.png").build();
 
-        when(messageRepository.findByRoomIdAndTimestampBefore(
+        when(messageRepository.findChatMessagesByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
                 .thenReturn(getMessageSlice(messages, false));
-        when(userRepository.findAllById(Set.of("sender-1", "sender-2")))
+        when(userRepository.findAllRoomSummariesById(Set.of("sender-1", "sender-2")))
                 .thenReturn(List.of(sender1, sender2));
         when(fileRepository.findAllById(Set.of("file-1", "file-2")))
                 .thenReturn(List.of(file1, file2));
@@ -166,7 +166,7 @@ class MessageLoaderTest {
         assertThat(result.getMessages()).hasSize(3);
         assertThat(result.getMessages()).allSatisfy(message ->
                 assertThat(message.getFile()).isNotNull());
-        verify(userRepository).findAllById(Set.of("sender-1", "sender-2"));
+        verify(userRepository).findAllRoomSummariesById(Set.of("sender-1", "sender-2"));
         verify(fileRepository).findAllById(Set.of("file-1", "file-2"));
         verify(userRepository, never()).findById(anyString());
         verify(fileRepository, never()).findById(anyString());
@@ -192,7 +192,7 @@ class MessageLoaderTest {
         // [1시간 전, 2시간 전, ..., 30시간 전]
         Slice<Message> messageSlice = getMessageSlice(last30Messages, false);
         
-        when(messageRepository.findByRoomIdAndTimestampBefore(
+        when(messageRepository.findChatMessagesByRoomIdAndTimestampBefore(
                 eq(roomId), any(LocalDateTime.class), any(Pageable.class)))
                 .thenReturn(messageSlice);
         
@@ -219,7 +219,7 @@ class MessageLoaderTest {
     @Test
     @DisplayName("loadInitialMessages: 에러 시 빈 응답")
     void loadInitialMessages_shouldReturnEmptyOnError() {
-        when(messageRepository.findByRoomIdAndTimestampBefore(
+        when(messageRepository.findChatMessagesByRoomIdAndTimestampBefore(
                 any(), any(LocalDateTime.class), any(Pageable.class)))
                 .thenThrow(new RuntimeException("DB error"));
         

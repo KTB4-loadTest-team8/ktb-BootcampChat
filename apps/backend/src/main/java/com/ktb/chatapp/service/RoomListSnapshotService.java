@@ -100,7 +100,7 @@ public class RoomListSnapshotService {
         }
 
         Map<String, User> usersById = new HashMap<>();
-        userRepository.findAllById(userIds)
+        userRepository.findAllRoomSummariesById(userIds)
                 .forEach(user -> usersById.put(user.getId(), user));
         return usersById;
     }

@@ -15,6 +15,18 @@ import org.springframework.data.domain.Slice;
 
 @Repository
 public interface MessageRepository extends MongoRepository<Message, String> {
+    /**
+     * 채팅 화면에 필요한 메시지 필드만 조회한다.
+     * metadata와 독자의 readAt은 응답에 사용하지 않으므로 MongoDB에서 함께 읽지 않는다.
+     */
+    @Query(value = "{ 'room': ?0, 'timestamp': { '$lt': ?1 } }",
+            fields = "{ '_id': 1, 'room': 1, 'content': 1, 'sender': 1, 'type': 1, 'file': 1, "
+                    + "'aiType': 1, 'timestamp': 1, 'reactions': 1, 'readers.userId': 1 }")
+    Slice<Message> findChatMessagesByRoomIdAndTimestampBefore(
+            String roomId,
+            LocalDateTime timestamp,
+            Pageable pageable);
+
     Slice<Message> findByRoomIdAndTimestampBefore(String roomId, LocalDateTime timestamp, Pageable pageable);
     /**
      * 특정 시간 이후의 메시지 수 카운트
