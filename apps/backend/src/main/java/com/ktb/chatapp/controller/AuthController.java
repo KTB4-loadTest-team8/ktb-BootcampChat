@@ -175,10 +175,8 @@ public class AuthController {
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
             
-            // 단일 세션 정책을 위해 기존 세션 제거
-            sessionService.removeAllUserSessions(user.getId());
-
-            // Create new session
+            // createSession()이 기존 세션 정리와 새 세션 생성을 한 번에 처리한다.
+            // 여기서 미리 삭제하면 로그인마다 Redis 삭제가 중복된다.
             SessionMetadata metadata = new SessionMetadata(
                     request.getHeader("User-Agent"),
                     getClientIpAddress(request),
