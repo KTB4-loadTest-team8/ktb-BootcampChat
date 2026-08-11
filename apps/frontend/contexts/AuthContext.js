@@ -323,10 +323,24 @@ export const withoutAuth = (WrappedComponent) => {
 
     useEffect(() => {
       // 라우터가 준비되고 로딩이 끝났을 때
-      if (router.isReady && !isLoading && isAuthenticated) {
-        // 이미 로그인된 사용자는 채팅 페이지로 리다이렉트
-        router.replace('/chat');
+      if (!(router.isReady && !isLoading && isAuthenticated)) {
+        return;
       }
+
+      // 오픈 리다이렉트 방지: 내부 절대경로("/...")만 목적지로 허용한다.
+      const rawRedirect = router.query.redirect;
+      const redirectParam =
+        typeof rawRedirect === 'string' &&
+        rawRedirect.startsWith('/') &&
+        !rawRedirect.startsWith('//')
+          ? rawRedirect
+          : null;
+      const target = redirectParam || '/chat';
+
+      // 인증이 쿠키 단일 출처로 통일되어 클라이언트(Pages)와 서버(App Router /chat)가
+      // 항상 같은 세션을 본다. 예전의 localStorage↔쿠키 불일치로 생기던 / ↔ /chat
+      // 무한 리다이렉트가 구조적으로 불가능하므로 바운스 감지 로직을 제거했다.
+      router.replace(target);
     }, [isAuthenticated, isLoading, router, router.isReady]);
 
     // 로딩 중이거나 이미 로그인된 사용자인 경우 로딩 화면
