@@ -9,6 +9,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,11 +19,21 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class RecentMessageCounter {
 
+    public static final String RECENT_MESSAGE_COUNT_CACHE = "recent-message-count:v1";
     static final Duration RECENT_WINDOW = Duration.ofMinutes(30);
 
     private final MessageRepository messageRepository;
     private final ChatRoomMetrics chatRoomMetrics;
 
+    /**
+     * 메시지 이벤트가 집중되는 동안 동일 방의 COUNT 쿼리가 반복되지 않도록 Redis에 짧게 캐시한다.
+     * RedisCacheConfig의 기본 TTL을 사용하며, 캐시 miss에서만 MongoDB COUNT를 실행한다.
+     */
+    @Cacheable(
+            cacheNames = RECENT_MESSAGE_COUNT_CACHE,
+            key = "#roomId",
+            sync = true
+    )
     public int countRecentMessages(String roomId) {
         Timer.Sample timerSample = chatRoomMetrics.start();
         String metricStatus = "error";
