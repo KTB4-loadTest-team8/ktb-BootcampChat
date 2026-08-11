@@ -8,6 +8,9 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import com.fasterxml.jackson.annotation.JsonSetter;
+import java.time.Instant;
+import java.time.ZoneId;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -58,9 +61,26 @@ public class RoomResponse {
     @Schema(description = "채팅방 생성 시간 (ISO 8601 형식)", example = "2025-11-18T12:34:56.789Z")
     @JsonGetter("createdAt")
     public String getCreatedAt() {
+        if (createdAtDateTime == null) {
+            return null;
+        }
+
         return createdAtDateTime
-                .atZone(java.time.ZoneId.systemDefault())
+                .atZone(ZoneId.systemDefault())
                 .toInstant()
                 .toString();
+    }
+
+    @JsonSetter("createdAt")
+    public void setCreatedAt(String createdAt) {
+        if (createdAt == null || createdAt.isBlank()) {
+            this.createdAtDateTime = null;
+            return;
+        }
+
+        this.createdAtDateTime = LocalDateTime.ofInstant(
+                Instant.parse(createdAt),
+                ZoneId.systemDefault()
+        );
     }
 }

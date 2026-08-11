@@ -29,7 +29,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class RoomService {
 
-    static final String ROOMS_CACHE = "rooms";
+    static final String ROOMS_CACHE = "rooms:v2";
 
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
