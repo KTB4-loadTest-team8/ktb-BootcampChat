@@ -41,6 +41,7 @@ public class InitialMessageLoadService {
             log.error("Error loading initial messages asynchronously for room {}", roomId, e);
             client.sendEvent(ERROR, Map.of(
                     "code", "LOAD_ERROR",
+                    "roomId", roomId,
                     "message", "초기 메시지를 불러오는 중 오류가 발생했습니다."
             ));
         }

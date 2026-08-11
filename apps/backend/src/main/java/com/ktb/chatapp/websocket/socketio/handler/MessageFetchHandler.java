@@ -46,6 +46,7 @@ public class MessageFetchHandler {
             if (room == null || !room.getParticipantIds().contains(userId)) {
                 client.sendEvent(ERROR, Map.of(
                         "code", "LOAD_ERROR",
+                        "roomId", data.roomId(),
                         "message", "채팅방 접근 권한이 없습니다."
                 ));
                 return;
@@ -67,6 +68,7 @@ public class MessageFetchHandler {
             log.error("Error handling fetchPreviousMessages", e);
             client.sendEvent(ERROR, Map.of(
                     "code", "LOAD_ERROR",
+                    "roomId", data.roomId(),
                     "message", e.getMessage() != null ?
                             e.getMessage() : "이전 메시지를 불러오는 중 오류가 발생했습니다."
             ));

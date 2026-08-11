@@ -2,6 +2,7 @@ package com.ktb.chatapp.repository;
 
 import com.ktb.chatapp.model.User;
 import org.springframework.data.mongodb.repository.MongoRepository;
+import org.springframework.data.mongodb.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -16,8 +17,16 @@ public interface UserRepository extends MongoRepository<User, String> {
      * 방 목록·참가자 응답에 필요한 사용자 필드만 조회한다.
      * 비밀번호, 암호화 이메일, 활동 시간 등은 방 응답에 사용하지 않는다.
      */
-    @org.springframework.data.mongodb.repository.Query(
+    @Query(
             value = "{ '_id': { '$in': ?0 } }",
             fields = "{ '_id': 1, 'name': 1, 'email': 1, 'profileImage': 1 }")
     List<User> findAllRoomSummariesById(Collection<String> userIds);
+
+    /**
+     * 메시지 응답에 필요한 발신자 필드만 조회한다.
+     */
+    @Query(
+            value = "{ '_id': ?0 }",
+            fields = "{ '_id': 1, 'name': 1, 'email': 1, 'profileImage': 1 }")
+    Optional<User> findMessageSenderById(String userId);
 }

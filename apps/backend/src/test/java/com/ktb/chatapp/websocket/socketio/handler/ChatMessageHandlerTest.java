@@ -91,12 +91,12 @@ class ChatMessageHandlerTest {
 
         User user = new User();
         user.setId("user-1");
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(userRepository.findMessageSenderById("user-1")).thenReturn(Optional.of(user));
 
         Room room = new Room();
         room.setId("room-1");
         room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(roomRepository.findRoomForReadById("room-1")).thenReturn(Optional.of(room));
 
         ChatMessageRequest request =
                 ChatMessageRequest.builder()
@@ -132,12 +132,12 @@ class ChatMessageHandlerTest {
         User user = new User();
         user.setId("user-1");
         user.setName("Tester");
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(userRepository.findMessageSenderById("user-1")).thenReturn(Optional.of(user));
 
         Room room = new Room();
         room.setId("room-1");
         room.setParticipantIds(new HashSet<>(java.util.List.of("user-1")));
-        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(roomRepository.findRoomForReadById("room-1")).thenReturn(Optional.of(room));
         when(bannedWordChecker.containsBannedWord("hello")).thenReturn(false);
         when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
         doThrow(new RejectedExecutionException("executor closed"))

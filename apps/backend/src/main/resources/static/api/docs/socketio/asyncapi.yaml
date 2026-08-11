@@ -1031,6 +1031,9 @@ components:
     FetchMessagesResponse:
       type: object
       properties:
+        roomId:
+          type: string
+          description: 메시지를 조회한 채팅방 ID
         messages:
           type: array
           items:
@@ -1040,6 +1043,7 @@ components:
           type: boolean
           description: 더 많은 메시지 존재 여부
       required:
+        - roomId
         - messages
         - hasMore
 

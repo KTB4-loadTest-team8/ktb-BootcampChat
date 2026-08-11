@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
@@ -72,6 +73,48 @@ class BoundedExecutorMetricsTest {
                 .tag("executor", "test-executor")
                 .gauge()
                 .value()).isEqualTo(2);
+    }
+
+    @Test
+    void abortPolicyRecordsRejectionWithoutRunningTaskOnCaller() throws Exception {
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(1);
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+
+        BoundedExecutorMetrics.configure(executor, "abort-executor", meterRegistry, false);
+
+        CountDownLatch taskStarted = new CountDownLatch(1);
+        CountDownLatch releaseTask = new CountDownLatch(1);
+        AtomicBoolean callerRan = new AtomicBoolean(false);
+
+        executor.execute(() -> {
+            taskStarted.countDown();
+            await(releaseTask);
+        });
+        assertThat(taskStarted.await(1, TimeUnit.SECONDS)).isTrue();
+        executor.execute(() -> { });
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> executor.execute(() -> callerRan.set(true)))
+                .isInstanceOf(RejectedExecutionException.class);
+
+        assertThat(callerRan).isFalse();
+        assertThat(meterRegistry.get("chat.executor.rejected")
+                .tag("executor", "abort-executor")
+                .counter()
+                .count()).isEqualTo(1);
+        assertThat(meterRegistry.get("chat.executor.caller.runs")
+                .tag("executor", "abort-executor")
+                .counter()
+                .count()).isZero();
+
+        releaseTask.countDown();
+        executor.shutdown();
+        assertThat(executor.getThreadPoolExecutor().awaitTermination(1, TimeUnit.SECONDS))
+                .isTrue();
     }
 
     private static void await(CountDownLatch latch) {

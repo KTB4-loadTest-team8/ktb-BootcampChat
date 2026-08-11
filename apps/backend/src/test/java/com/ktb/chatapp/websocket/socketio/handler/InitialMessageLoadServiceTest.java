@@ -30,6 +30,7 @@ class InitialMessageLoadServiceTest {
     void loadAndSend_loadsThirtyInitialMessagesAndSendsExistingEvent() {
         InitialMessageLoadService service = new InitialMessageLoadService(messageLoader);
         FetchMessagesResponse response = FetchMessagesResponse.builder()
+                .roomId("room-1")
                 .messages(List.of())
                 .hasMore(false)
                 .build();
@@ -61,6 +62,7 @@ class InitialMessageLoadServiceTest {
         verify(client).sendEvent(eq(ERROR), errorCaptor.capture());
         assertThat(errorCaptor.getValue())
                 .containsEntry("code", "LOAD_ERROR")
+                .containsEntry("roomId", "room-1")
                 .containsEntry("message", "초기 메시지를 불러오는 중 오류가 발생했습니다.");
         verify(client, never()).sendEvent(eq(PREVIOUS_MESSAGES_LOADED), any());
     }
