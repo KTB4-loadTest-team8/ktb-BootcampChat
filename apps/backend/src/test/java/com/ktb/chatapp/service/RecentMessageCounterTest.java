@@ -8,6 +8,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.cache.annotation.Cacheable;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -52,5 +53,18 @@ class RecentMessageCounterTest {
 
         verifyNoInteractions(messageRepository);
         assertThat(meterRegistry.find(ChatRoomMetrics.RECENT_COUNT_DURATION).timer()).isNull();
+    }
+
+    @Test
+    void countRecentMessages_singleQuery_isRedisCacheable() throws NoSuchMethodException {
+        Cacheable cacheable = RecentMessageCounter.class
+                .getMethod("countRecentMessages", String.class)
+                .getAnnotation(Cacheable.class);
+
+        assertThat(cacheable).isNotNull();
+        assertThat(cacheable.cacheNames())
+                .containsExactly(RecentMessageCounter.RECENT_MESSAGE_COUNT_CACHE);
+        assertThat(cacheable.key()).isEqualTo("#roomId");
+        assertThat(cacheable.sync()).isTrue();
     }
 }
