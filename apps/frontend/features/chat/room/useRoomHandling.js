@@ -45,7 +45,6 @@ export const useRoomHandling = ({
   const { user, refreshToken, logout } = useAuth();
   const setupPromiseRef = useRef(null);
   const roomEventsUnsubscribeRef = useRef(null);
-  const MAX_SOCKET_RECONNECT_ATTEMPTS = 3;
   const MAX_MESSAGE_RETRY_ATTEMPTS = 3;
   const MESSAGE_TIMEOUT = 5000;
   const MESSAGE_RETRY_DELAY = 2000;
@@ -149,42 +148,11 @@ export const useRoomHandling = ({
         return socketRef.current;
       }
 
-      if (socketRef.current) {
-        const currentSocket = socketRef.current;
-
-        if (userRooms.current?.get(currentSocket.id)) {
-          await new Promise((resolve) => {
-            socketClient.leaveRoom(
-              userRooms.current.get(currentSocket.id),
-              currentSocket
-            );
-            setTimeout(resolve, 1000);
-          });
-          userRooms.current.delete(currentSocket.id);
-        }
-
-        currentSocket.disconnect();
-        currentSocket.removeAllListeners();
-        attachSocket(null);
-
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      }
-
       const socket = await socketClient.connect({
         auth: {
           token: user.token,
           sessionId: user.sessionId,
         },
-        transports: ['websocket', 'polling'],
-        reconnection: true,
-        reconnectionAttempts: MAX_SOCKET_RECONNECT_ATTEMPTS,
-        reconnectionDelay: 1000,
-        reconnectionDelayMax: 3000,
-        timeout: 10000,
-        pingTimeout: 10000,
-        pingInterval: 8000,
-        forceNew: true,
-        autoConnect: true,
       });
 
       return socket;
@@ -194,7 +162,7 @@ export const useRoomHandling = ({
       }
       throw error;
     }
-  }, [userRooms, onReplace, socketRef, attachSocket, user]);
+  }, [onReplace, socketRef, user]);
 
   const fetchRoomData = useCallback(
     async (roomId) => {
@@ -393,11 +361,6 @@ export const useRoomHandling = ({
 
           setupFailed(errorMessage);
           cleanup('ERROR');
-
-          if (socketRef.current) {
-            socketRef.current.disconnect();
-            attachSocket(null);
-          }
         }
 
         throw error;
@@ -442,12 +405,9 @@ export const useRoomHandling = ({
         roomEventsUnsubscribeRef.current = null;
       }
 
-      // 언마운트 경로는 attachSocket 을 쓰지 않는다. 사라지는 컴포넌트에
-       // 소켓 교체를 통지할 구독자가 없다.
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
+      // 소켓은 사용자 세션 범위에서 유지한다. 화면은 자신의 이벤트 구독만
+      // 해제하고, 실제 연결 종료는 로그아웃/세션 종료 시 Provider가 담당한다.
+      socketRef.current = null;
     };
   }, []);
 

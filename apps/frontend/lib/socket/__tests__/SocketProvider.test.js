@@ -39,15 +39,70 @@ describe('SocketProvider', () => {
       sessionId: 'session-1',
     });
 
+    expect(client.connect).toHaveBeenCalledTimes(1);
+
     act(() => {
       window.dispatchEvent(new Event('online'));
     });
 
+    expect(client.connect).toHaveBeenCalledTimes(2);
     expect(client.connect).toHaveBeenCalledWith({
       auth: {
         token: 'token-1',
         sessionId: 'session-1',
       },
     });
+  });
+
+  it('connects once as soon as an authenticated session is available', () => {
+    const client = {
+      connect: vi.fn().mockResolvedValue({ id: 'socket-1' }),
+      disconnect: vi.fn(),
+      isConnected: vi.fn(() => true),
+    };
+
+    renderProvider(client, {
+      token: 'token-1',
+      sessionId: 'session-1',
+    });
+
+    expect(client.connect).toHaveBeenCalledTimes(1);
+    expect(client.disconnect).not.toHaveBeenCalled();
+  });
+
+  it('disconnects when the authenticated session ends', () => {
+    const client = {
+      connect: vi.fn().mockResolvedValue({ id: 'socket-1' }),
+      disconnect: vi.fn(),
+      isConnected: vi.fn(() => true),
+    };
+    const { rerender } = renderProvider(client, {
+      token: 'token-1',
+      sessionId: 'session-1',
+    });
+
+    rerender(
+      <SocketProvider client={client} session={null}>
+        <div>child</div>
+      </SocketProvider>
+    );
+
+    expect(client.disconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not disconnect merely because the provider unmounts', () => {
+    const client = {
+      connect: vi.fn().mockResolvedValue({ id: 'socket-1' }),
+      disconnect: vi.fn(),
+      isConnected: vi.fn(() => true),
+    };
+    const { unmount } = renderProvider(client, {
+      token: 'token-1',
+      sessionId: 'session-1',
+    });
+
+    unmount();
+
+    expect(client.disconnect).not.toHaveBeenCalled();
   });
 });

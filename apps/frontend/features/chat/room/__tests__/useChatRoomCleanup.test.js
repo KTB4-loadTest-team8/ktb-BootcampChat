@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChatRoom } from '../useChatRoom';
+import socketClient from '@/lib/socket/socketClient';
 
 const socket = {
   connected: true,
@@ -124,5 +125,7 @@ describe('useChatRoom cleanup', () => {
     });
 
     expect(cleanupManual).toHaveBeenCalledTimes(1);
+    expect(socketClient.tryLeaveRoom).toHaveBeenCalledWith('room-1', socket);
+    expect(socket.off).not.toHaveBeenCalled();
   });
 });

@@ -8,8 +8,12 @@ vi.mock('socket.io-client', () => ({
 
 const createSocket = ({ connected = false } = {}) => ({
   connected,
+  active: false,
+  auth: null,
   emit: vi.fn(),
   on: vi.fn(),
+  off: vi.fn(),
+  connect: vi.fn(),
   disconnect: vi.fn(),
   io: {
     on: vi.fn(),
@@ -29,6 +33,13 @@ const getSocketHandler = (socket, event) =>
 
 const getManagerHandler = (socket, event) =>
   socket.io.on.mock.calls.find(([registeredEvent]) => registeredEvent === event)?.[1];
+
+const emitSocketEvent = (socket, event, payload) => {
+  if (event === 'connect') socket.connected = true;
+  for (const [, handler] of socket.on.mock.calls.filter(([registered]) => registered === event)) {
+    handler(payload);
+  }
+};
 
 describe('socketService', () => {
   let service;
@@ -102,7 +113,7 @@ describe('socketService', () => {
     expect(liveSocket.disconnect).not.toHaveBeenCalled();
   });
 
-  it('disconnects and clears a failed socket when connection times out', async () => {
+  it('keeps the session socket available for retry when connection times out', async () => {
     const socket = createSocket();
     io.mockReturnValue(socket);
 
@@ -112,15 +123,14 @@ describe('socketService', () => {
     await flushPromises();
 
     await expect(connection).resolves.toBe('Connection timeout');
-    expect(socket.disconnect).toHaveBeenCalledTimes(1);
-    expect(service.socket).toBeNull();
+    expect(socket.disconnect).not.toHaveBeenCalled();
+    expect(service.socket).toBe(socket);
     expect(service.connected).toBe(false);
   });
 
-  it('starts a fresh reconnect when reconnect is requested during a pending connection', async () => {
+  it('reuses the same socket when reconnect is requested during a pending connection', async () => {
     const pendingSocket = createSocket();
-    const reconnectedSocket = createSocket({ connected: true });
-    io.mockReturnValueOnce(pendingSocket).mockReturnValueOnce(reconnectedSocket);
+    io.mockReturnValueOnce(pendingSocket);
 
     service.connect().catch(() => {});
     const pendingConnection = service.connectionPromise;
@@ -145,18 +155,68 @@ describe('socketService', () => {
     expect(service.connectionPromise).toBeNull();
     expect(service.connectionReject).toBeNull();
     expect(service.connectionTimeout).toBeNull();
-    expect(pendingSocket.disconnect).toHaveBeenCalledTimes(1);
+    expect(pendingSocket.disconnect).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(1000);
     await flushPromises();
 
-    expect(io).toHaveBeenCalledTimes(2);
-    expect(service.socket).toBe(reconnectedSocket);
+    expect(io).toHaveBeenCalledTimes(1);
+    expect(service.socket).toBe(pendingSocket);
+    expect(pendingSocket.connect).toHaveBeenCalledTimes(1);
 
-    getSocketHandler(reconnectedSocket, 'connect')();
+    emitSocketEvent(pendingSocket, 'connect');
     await expect(settledReconnect).resolves.toBe('resolved');
     expect(service.isReconnecting).toBe(false);
     expect(service.connected).toBe(true);
+  });
+
+  it('shares one connection promise across simultaneous callers', async () => {
+    const socket = createSocket();
+    io.mockReturnValue(socket);
+
+    const first = service.connect({ auth: { token: 'token-1', sessionId: 'session-1' } });
+    const second = service.connect({ auth: { token: 'token-1', sessionId: 'session-1' } });
+
+    expect(service.connectionPromise).toBeTruthy();
+    expect(io).toHaveBeenCalledTimes(1);
+
+    emitSocketEvent(socket, 'connect');
+
+    await expect(Promise.all([first, second])).resolves.toEqual([socket, socket]);
+    expect(io).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the connected session socket without creating a new one', async () => {
+    const socket = createSocket();
+    io.mockReturnValue(socket);
+
+    const first = service.connect({ auth: { token: 'token-1', sessionId: 'session-1' } });
+    emitSocketEvent(socket, 'connect');
+    await first;
+
+    await expect(
+      service.connect({ auth: { token: 'token-2', sessionId: 'session-1' } })
+    ).resolves.toBe(socket);
+
+    expect(io).toHaveBeenCalledTimes(1);
+    expect(socket.auth).toEqual({ token: 'token-2', sessionId: 'session-1' });
+  });
+
+  it('disconnects the old socket only when the authenticated session changes', async () => {
+    const firstSocket = createSocket();
+    const secondSocket = createSocket();
+    io.mockReturnValueOnce(firstSocket).mockReturnValueOnce(secondSocket);
+
+    const first = service.connect({ auth: { token: 'token-1', sessionId: 'session-1' } });
+    emitSocketEvent(firstSocket, 'connect');
+    await first;
+
+    const second = service.connect({ auth: { token: 'token-2', sessionId: 'session-2' } });
+    emitSocketEvent(secondSocket, 'connect');
+    await expect(second).resolves.toBe(secondSocket);
+
+    expect(firstSocket.disconnect).toHaveBeenCalledTimes(1);
+    expect(io).toHaveBeenCalledTimes(2);
   });
 
   it('does not leave transport error reconnect rejections unhandled', async () => {
