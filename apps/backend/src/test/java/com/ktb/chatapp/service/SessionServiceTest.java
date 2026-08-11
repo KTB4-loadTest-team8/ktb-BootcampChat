@@ -20,7 +20,9 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @Import(MongoTestContainer.class)
 @TestPropertySource(properties = {
-    "socketio.enabled=false"
+    "socketio.enabled=false",
+    // This legacy integration suite has a MongoDB Testcontainer only.
+    "session.redis.enabled=false"
 })
 @DisplayName("SessionService 통합 테스트")
 class SessionServiceTest {

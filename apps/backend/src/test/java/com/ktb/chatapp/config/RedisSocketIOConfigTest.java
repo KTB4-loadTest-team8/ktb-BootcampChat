@@ -1,6 +1,8 @@
 package com.ktb.chatapp.config;
 
 import com.corundumstudio.socketio.SocketIOServer;
+import com.ktb.chatapp.service.session.SessionRedisStore;
+import com.ktb.chatapp.service.session.SessionStore;
 import org.junit.jupiter.api.Test;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,10 +16,12 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest(properties = {
         "socketio.enabled=true",
         "socketio.redis.enabled=true",
+        "session.redis.enabled=true",
         "socketio.server.port=0",
         "spring.data.redis.password="
 })
@@ -41,9 +45,13 @@ class RedisSocketIOConfigTest {
     @Autowired
     private RedissonClient socketIORedissonClient;
 
+    @Autowired
+    private SessionStore sessionStore;
+
     @Test
     void shouldCreateRedisBackedSocketIoServer() {
         assertNotNull(socketIOServer);
         assertFalse(socketIORedissonClient.isShutdown());
+        assertTrue(sessionStore instanceof SessionRedisStore);
     }
 }

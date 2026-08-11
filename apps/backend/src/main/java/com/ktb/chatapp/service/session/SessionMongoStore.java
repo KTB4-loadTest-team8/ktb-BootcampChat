@@ -4,6 +4,7 @@ import com.ktb.chatapp.model.Session;
 import com.ktb.chatapp.repository.SessionRepository;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 /**
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @RequiredArgsConstructor
+@ConditionalOnProperty(name = "session.redis.enabled", havingValue = "false")
 public class SessionMongoStore implements SessionStore {
     
     private final SessionRepository sessionRepository;
