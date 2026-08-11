@@ -7,6 +7,7 @@ import { CONNECTION_STATUS } from '../useServerConnection';
 const mocks = vi.hoisted(() => ({
   connectionStatus: 'checking',
   error: null,
+  loading: false,
   fetchRooms: vi.fn(() => Promise.resolve()),
   refreshRooms: vi.fn(() => Promise.resolve(true)),
   attemptConnection: vi.fn(() => Promise.resolve(true)),
@@ -48,7 +49,7 @@ vi.mock('../useRoomList', () => ({
     replaceRoom: vi.fn(),
     mergeRoomActivity: vi.fn(),
     error: mocks.error,
-    loading: false,
+    loading: mocks.loading,
     refreshing: false,
     joiningRoom: false,
     fetchRooms: mocks.fetchRooms,
@@ -65,6 +66,7 @@ describe('ChatRoomsView', () => {
   beforeEach(() => {
     mocks.connectionStatus = CONNECTION_STATUS.CHECKING;
     mocks.error = null;
+    mocks.loading = false;
     mocks.fetchRooms.mockClear();
     mocks.refreshRooms.mockClear();
     mocks.attemptConnection.mockClear();
@@ -168,6 +170,27 @@ describe('ChatRoomsView', () => {
   it('reserves the room list height before room data arrives', () => {
     render(<ChatRoomsView router={{ push: vi.fn() }} />);
 
+    expect(screen.getByTestId('rooms-list-surface').style.height).toBe('430px');
     expect(screen.getByTestId('rooms-list-surface').style.minHeight).toBe('430px');
+    expect(screen.getByTestId('rooms-list-surface').style.position).toBe('relative');
+  });
+
+  it('shows errors as an overlay without changing the room list height', () => {
+    mocks.connectionStatus = CONNECTION_STATUS.ERROR;
+    mocks.error = { title: '연결 오류', message: '서버와 연결할 수 없습니다.', type: 'danger' };
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    expect(screen.getByTestId('rooms-error-overlay').style.position).toBe('absolute');
+    expect(screen.getByTestId('rooms-list-surface').style.height).toBe('430px');
+  });
+
+  it('renders a table-shaped skeleton without changing the reserved list height', () => {
+    mocks.loading = true;
+
+    render(<ChatRoomsView router={{ push: vi.fn() }} />);
+
+    expect(screen.getByTestId('rooms-table-skeleton')).toBeTruthy();
+    expect(screen.getByTestId('rooms-list-surface').style.height).toBe('430px');
   });
 });

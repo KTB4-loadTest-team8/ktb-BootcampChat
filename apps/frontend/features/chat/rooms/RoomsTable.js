@@ -5,8 +5,85 @@ import * as Table from '@/components/Table';
 import { CONNECTION_STATUS } from './useServerConnection';
 
 export const ROOMS_TABLE_HEIGHT = 430;
+export const ROOM_TABLE_HEADER_HEIGHT = 44;
 export const ROOM_ROW_HEIGHT = 72;
 export const ROOM_ROW_OVERSCAN = 10;
+
+const TABLE_COLUMN_WIDTHS = ['40%', '12%', '12%', '21%', '15%'];
+const TABLE_HEADINGS = ['채팅방', '참여자', '최근 메시지', '생성일', '액션'];
+
+const TableColumns = () => (
+  <Table.ColumnGroup>
+    {TABLE_COLUMN_WIDTHS.map((width, index) => (
+      <Table.Column key={`${width}-${index}`} style={{ width }} />
+    ))}
+  </Table.ColumnGroup>
+);
+
+const TableHeader = () => (
+  <Table.Header>
+    <Table.Row style={{ height: `${ROOM_TABLE_HEADER_HEIGHT}px` }}>
+      {TABLE_HEADINGS.map((heading) => (
+        <Table.Heading key={heading}>{heading}</Table.Heading>
+      ))}
+    </Table.Row>
+  </Table.Header>
+);
+
+const SkeletonBar = ({ width }) => (
+  <span
+    aria-hidden="true"
+    style={{
+      display: 'block',
+      width,
+      maxWidth: '100%',
+      height: '14px',
+      borderRadius: '999px',
+      backgroundColor: 'var(--vapor-color-border-normal)',
+      opacity: 0.65,
+    }}
+  />
+);
+
+export const RoomsTableSkeleton = () => {
+  const visibleRowCount = Math.ceil(
+    (ROOMS_TABLE_HEIGHT - ROOM_TABLE_HEADER_HEIGHT) / ROOM_ROW_HEIGHT
+  );
+  const skeletonWidths = ['70%', '42%', '36%', '78%', '56%'];
+
+  return (
+    <div
+      className="chat-rooms-table"
+      data-testid="rooms-table-skeleton"
+      aria-label="채팅방 목록을 불러오는 중..."
+      aria-busy="true"
+      style={{
+        height: `${ROOMS_TABLE_HEIGHT}px`,
+        overflow: 'hidden',
+        position: 'relative',
+        borderRadius: '0.5rem',
+        backgroundColor: 'var(--background-normal)',
+        border: '1px solid var(--border-color)',
+      }}
+    >
+      <Table.Root style={{ width: '100%', tableLayout: 'fixed' }}>
+        <TableColumns />
+        <TableHeader />
+        <Table.Body>
+          {Array.from({ length: visibleRowCount }, (_, rowIndex) => (
+            <Table.Row key={rowIndex} style={{ height: `${ROOM_ROW_HEIGHT}px` }}>
+              {skeletonWidths.map((width, columnIndex) => (
+                <Table.Cell key={columnIndex}>
+                  <SkeletonBar width={width} />
+                </Table.Cell>
+              ))}
+            </Table.Row>
+          ))}
+        </Table.Body>
+      </Table.Root>
+    </div>
+  );
+};
 
 const DATE_FORMATTER = new Intl.DateTimeFormat('ko-KR', {
   year: 'numeric',
@@ -155,23 +232,8 @@ const RoomsTable = ({
       }}
     >
       <Table.Root style={{ width: '100%', tableLayout: 'fixed' }}>
-        <Table.ColumnGroup>
-          <Table.Column style={{ width: '40%' }} />
-          <Table.Column style={{ width: '12%' }} />
-          <Table.Column style={{ width: '12%' }} />
-          <Table.Column style={{ width: '21%' }} />
-          <Table.Column style={{ width: '15%' }} />
-        </Table.ColumnGroup>
-
-        <Table.Header>
-          <Table.Row>
-            <Table.Heading>채팅방</Table.Heading>
-            <Table.Heading>참여자</Table.Heading>
-            <Table.Heading>최근 메시지</Table.Heading>
-            <Table.Heading>생성일</Table.Heading>
-            <Table.Heading>액션</Table.Heading>
-          </Table.Row>
-        </Table.Header>
+        <TableColumns />
+        <TableHeader />
 
         <Table.Body>
           <SpacerRow height={startIndex * ROOM_ROW_HEIGHT} />
