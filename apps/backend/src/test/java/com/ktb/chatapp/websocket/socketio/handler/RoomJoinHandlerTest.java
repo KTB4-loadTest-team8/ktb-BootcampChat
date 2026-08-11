@@ -29,7 +29,6 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -79,14 +78,13 @@ class RoomJoinHandlerTest {
         Room room = Room.builder().id("room-1").name("room").participantIds(Set.of("user-1", "user-2")).build();
         when(client.get("user")).thenReturn(socketUser);
         when(userRepository.findAllRoomSummariesById(Set.of("user-1", "user-2"))).thenReturn(List.of(user, participant));
-        when(roomRepository.findRoomForReadById("room-1")).thenReturn(Optional.of(room));
         when(roomRepository.addParticipantAndReturn("room-1", "user-1"))
                 .thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(false);
         handler.handleJoinRoom(client, "room-1");
 
         verify(roomRepository).addParticipantAndReturn("room-1", "user-1");
-        verify(roomRepository, times(1)).findRoomForReadById("room-1");
+        verify(roomRepository, never()).findRoomForReadById("room-1");
         verify(client).joinRoom("room-1");
         verify(userRooms).add("user-1", "room-1");
         ArgumentCaptor<JoinRoomSuccessResponse> responseCaptor =
@@ -107,6 +105,26 @@ class RoomJoinHandlerTest {
         org.assertj.core.api.Assertions.assertThat(meterRegistry
                 .get(ChatRoomMetrics.ROOM_JOIN_DURATION)
                 .tag("status", "success")
+                .timer()
+                .count()).isEqualTo(1);
+    }
+
+    @Test
+    void handleJoinRoom_rejectsMissingRoomFromAtomicParticipantUpdate() {
+        SocketUser socketUser = new SocketUser("user-1", "tester", "session-1", "socket-1");
+        when(client.get("user")).thenReturn(socketUser);
+        when(userRooms.isInRoom("user-1", "missing-room")).thenReturn(false);
+        when(roomRepository.addParticipantAndReturn("missing-room", "user-1"))
+                .thenReturn(Optional.empty());
+
+        handler.handleJoinRoom(client, "missing-room");
+
+        verify(client).sendEvent(eq(JOIN_ROOM_ERROR), any());
+        verify(userRepository, never()).findAllRoomSummariesById(any());
+        verify(roomListSnapshotService, never()).evictParticipantSnapshots();
+        org.assertj.core.api.Assertions.assertThat(meterRegistry
+                .get(ChatRoomMetrics.ROOM_JOIN_DURATION)
+                .tag("status", "room_not_found")
                 .timer()
                 .count()).isEqualTo(1);
     }

@@ -52,14 +52,6 @@ public class RoomJoinHandler {
                 return;
             }
             
-            // SocketUser는 AuthTokenListenerImpl에서 JWT와 사용자 존재를 검증한 뒤 주입된다.
-            // 여기서 같은 사용자를 다시 단건 조회하지 않고, 참가자 응답을 만들 때의 batch 조회를 재사용한다.
-            Room room = roomRepository.findRoomForReadById(roomId).orElse(null);
-            if (room == null) {
-                metricStatus = "room_not_found";
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
-                return;
-            }
             // 이미 해당 방에 참여 중인지 확인
             if (userRooms.isInRoom(userId, roomId)) {
                 log.debug("User {} already in room {}", userId, roomId);
@@ -69,8 +61,10 @@ public class RoomJoinHandler {
                 return;
             }
 
-            // 참가자 추가 결과로 반환된 최신 Room을 재사용해 입장 후 재조회하지 않는다.
-            room = roomRepository.addParticipantAndReturn(roomId, userId).orElse(null);
+            // SocketUser는 AuthTokenListenerImpl에서 JWT와 사용자 존재를 검증한 뒤 주입된다.
+            // 원자적 참가자 추가 결과로 방 존재 여부와 최신 참가자 상태를 동시에 확인해,
+            // 입장마다 선행 방 조회를 수행하지 않는다.
+            Room room = roomRepository.addParticipantAndReturn(roomId, userId).orElse(null);
             if (room == null) {
                 metricStatus = "room_not_found";
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
