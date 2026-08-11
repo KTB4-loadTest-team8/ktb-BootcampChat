@@ -104,8 +104,19 @@ export default function ChatRoomsView({
       // fetchRooms handles its own error state and returns false; attemptConnection
       // rejects on failure. Retry a few times so a transient /api/rooms failure
       // does not leave the page permanently stuck without join buttons.
-      if (succeeded === false && !cancelled && retryAttempt < 4) {
-        const delay = Math.min(3000 * (2 ** retryAttempt), 10000);
+      //
+      // 재시도 스케줄(base 1s→2s→4s→8s→8s, 총 6회 시도)은 e2e 타임아웃에 맞춘 값이다:
+      // - loginScenario의 join-button expect는 기본 5초 → 0/1/3초 시도가 창 안에 들어간다
+      // - joinRandomChatRoomAction의 waitFor는 기본 30초 → 마지막 시도가 ~23초에 시작해
+      //   응답 지연을 감안해도 창 안에서 완료될 수 있다
+      //
+      // 부하 상황에서 다수 클라이언트가 동시에 램프업하면 결정론적 백오프는 재시도가
+      // 같은 시점에 몰려(t=1s,2s,4s…) 서버에 동기화된 스파이크를 만든다. base 의 50~100%
+      // 구간으로 지터를 줘 재시도 파도를 분산한다. 지터는 지연을 "줄이는" 방향이라
+      // 각 시도가 base 시점보다 늦어지지 않으므로 위 e2e 창은 그대로 보존된다.
+      if (succeeded === false && !cancelled && retryAttempt < 5) {
+        const base = Math.min(1000 * (2 ** retryAttempt), 8000);
+        const delay = base * (0.5 + Math.random() * 0.5);
         retryTimer = setTimeout(() => {
           if (!cancelled) {
             initFetch(retryAttempt + 1);
