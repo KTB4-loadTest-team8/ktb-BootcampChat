@@ -74,4 +74,21 @@ public class MessageReadStatusAsyncConfig {
         BoundedExecutorMetrics.configure(executor, "chat-room-post-join", meterRegistry);
         return executor;
     }
+
+    @Bean(name = "chatMessageSideEffectTaskExecutor")
+    public Executor chatMessageSideEffectTaskExecutor(
+            @Value("${chat.chat-message-side-effect.executor.core-pool-size:2}") int corePoolSize,
+            @Value("${chat.chat-message-side-effect.executor.max-pool-size:4}") int maxPoolSize,
+            @Value("${chat.chat-message-side-effect.executor.queue-capacity:100}") int queueCapacity
+    ) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setThreadNamePrefix("chat-message-side-effect-");
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        BoundedExecutorMetrics.configure(executor, "chat-message-side-effect", meterRegistry);
+        return executor;
+    }
 }

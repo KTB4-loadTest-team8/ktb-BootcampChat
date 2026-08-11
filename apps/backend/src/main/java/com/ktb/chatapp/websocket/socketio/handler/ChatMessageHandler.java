@@ -27,6 +27,7 @@ import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.RejectedExecutionException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -168,12 +169,12 @@ public class ChatMessageHandler {
                     .sendEvent(MESSAGE, messageResponse);
             client.sendEvent(MESSAGE, messageResponse);
 
-            roomActivityNotifier.notifyMessageStored(roomId);
+            scheduleRoomActivityUpdate(roomId);
 
             // AI 멘션 처리
             aiService.handleAIMentions(roomId, socketUser.id(), messageContent);
 
-            sessionService.updateLastActivity(socketUser.id());
+            scheduleSessionActivityUpdate(socketUser.id());
 
             // Record success metrics
             recordMessageSuccess(messageType);
@@ -279,6 +280,32 @@ public class ChatMessageHandler {
         Counter.builder("socketio.messages.errors")
                 .description("Socket.IO message processing errors")
                 .tag("error_type", errorType)
+                .register(meterRegistry)
+                .increment();
+    }
+
+    private void scheduleRoomActivityUpdate(String roomId) {
+        try {
+            roomActivityNotifier.notifyMessageStoredAsync(roomId);
+        } catch (RejectedExecutionException e) {
+            recordSideEffectSchedulingError("room_activity");
+            log.warn("roomActivity 비동기 작업 예약 실패: roomId={}", roomId, e);
+        }
+    }
+
+    private void scheduleSessionActivityUpdate(String userId) {
+        try {
+            sessionService.updateLastActivityAsync(userId);
+        } catch (RejectedExecutionException e) {
+            recordSideEffectSchedulingError("session_activity");
+            log.warn("세션 활동 갱신 비동기 작업 예약 실패: userId={}", userId, e);
+        }
+    }
+
+    private void recordSideEffectSchedulingError(String operation) {
+        Counter.builder("chat.messages.side.effect.errors")
+                .description("Message side-effect failure count")
+                .tag("operation", operation + "_schedule")
                 .register(meterRegistry)
                 .increment();
     }

@@ -1,6 +1,8 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.event.RoomActivityEvent;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -21,9 +23,10 @@ class RoomActivityNotifierTest {
 
     @Mock private RecentMessageCounter recentMessageCounter;
     @Mock private ApplicationEventPublisher eventPublisher;
+    private final MeterRegistry meterRegistry = new SimpleMeterRegistry();
 
     private RoomActivityNotifier notifier() {
-        return new RoomActivityNotifier(recentMessageCounter, eventPublisher);
+        return new RoomActivityNotifier(recentMessageCounter, eventPublisher, meterRegistry);
     }
 
     @Test
@@ -68,5 +71,9 @@ class RoomActivityNotifierTest {
         notifier().notifyMessageStored("room-1");
 
         verify(eventPublisher, never()).publishEvent(any(RoomActivityEvent.class));
+        org.assertj.core.api.Assertions.assertThat(meterRegistry.get("chat.messages.side.effect.errors")
+                .tag("operation", "room_activity")
+                .counter()
+                .count()).isEqualTo(1);
     }
 }

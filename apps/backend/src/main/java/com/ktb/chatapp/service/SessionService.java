@@ -2,11 +2,15 @@ package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.model.Session;
 import com.ktb.chatapp.service.session.SessionStore;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.convert.DurationStyle;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import static com.ktb.chatapp.model.Session.SESSION_TTL;
@@ -17,6 +21,7 @@ import static com.ktb.chatapp.model.Session.SESSION_TTL;
 public class SessionService {
 
     private final SessionStore sessionStore;
+    private final MeterRegistry meterRegistry;
     public static final long SESSION_TTL_SEC = DurationStyle.detectAndParse(SESSION_TTL).getSeconds();
     private static final long SESSION_TIMEOUT = SESSION_TTL_SEC * 1000;
 
@@ -109,24 +114,52 @@ public class SessionService {
     }
 
     public void updateLastActivity(String userId) {
+        updateLastActivityInternal(userId);
+    }
+
+    /**
+     * 메시지 Socket 처리 경로와 분리해 세션 활동 시간을 갱신한다.
+     */
+    @Async("chatMessageSideEffectTaskExecutor")
+    public void updateLastActivityAsync(String userId) {
+        updateLastActivityInternal(userId);
+    }
+
+    private void updateLastActivityInternal(String userId) {
+        Timer.Sample timerSample = Timer.start(meterRegistry);
+        String status = "error";
         try {
             if (userId == null) {
                 log.warn("updateLastActivity called with null userId");
+                status = "invalid";
                 return;
             }
 
             Session session = sessionStore.findByUserId(userId).orElse(null);
             if (session == null) {
                 log.debug("No session found to update last activity for user: {}", userId);
+                status = "not_found";
                 return;
             }
 
             session.setLastActivity(Instant.now().toEpochMilli());
             session.setExpiresAt(Instant.now().plusSeconds(SESSION_TTL_SEC));
             sessionStore.save(session);
-            
+            status = "success";
         } catch (Exception e) {
+            Counter.builder("chat.messages.side.effect.errors")
+                    .description("Message side-effect failure count")
+                    .tag("operation", "session_activity")
+                    .register(meterRegistry)
+                    .increment();
             log.error("Failed to update session activity for user: {}", userId, e);
+        } finally {
+            timerSample.stop(Timer.builder("chat.messages.side.effect.duration")
+                    .description("Message side-effect processing time")
+                    .tag("operation", "session_activity")
+                    .tag("status", status)
+                    .publishPercentileHistogram()
+                    .register(meterRegistry));
         }
     }
 
