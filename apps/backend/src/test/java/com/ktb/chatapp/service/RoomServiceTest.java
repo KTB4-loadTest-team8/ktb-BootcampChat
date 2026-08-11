@@ -1,5 +1,7 @@
 package com.ktb.chatapp.service;
 
+import com.ktb.chatapp.dto.RoomResponse;
+import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.event.RoomUpdatedEvent;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
@@ -31,33 +33,43 @@ class RoomServiceTest {
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private RecentMessageCounter recentMessageCounter;
+    @Mock private RoomListSnapshotService roomListSnapshotService;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private ApplicationEventPublisher eventPublisher;
 
     @Test
-    void getAllRooms_shouldAvoidUserLookupAndBatchRecentMessageCounts() {
+    void getAllRooms_shouldReuseSharedSnapshotAndReturnIdOnlyUsers() {
         Room olderRoom = room("room-1", "creator-1", Set.of("creator-1", "user-1"), 1);
         Room newerRoom = room("room-2", "creator-2", Set.of("creator-2", "user-1", "user-2"), 2);
 
-        when(roomRepository.findAll()).thenReturn(List.of(olderRoom, newerRoom));
-        when(recentMessageCounter.countRecentMessages(List.of("room-1", "room-2")))
-                .thenReturn(Map.of("room-1", 3, "room-2", 7));
+        when(roomListSnapshotService.getRoomSnapshots()).thenReturn(List.of(
+                RoomResponse.builder().id(olderRoom.getId()).recentMessageCount(3)
+                        .creator(UserResponse.builder().id("creator-1").name("생성자").build())
+                        .participants(List.of(UserResponse.builder().id("user-1").name("참가자").build()))
+                        .createdAtDateTime(olderRoom.getCreatedAt()).build(),
+                RoomResponse.builder().id(newerRoom.getId()).recentMessageCount(7)
+                        .creator(UserResponse.builder().id("creator-2").name("생성자").build())
+                        .participants(List.of(UserResponse.builder().id("user-1").name("참가자").build()))
+                        .createdAtDateTime(newerRoom.getCreatedAt()).build()
+        ));
 
         var result = new RoomService(
                 roomRepository,
                 userRepository,
                 recentMessageCounter,
+                roomListSnapshotService,
                 passwordEncoder,
                 eventPublisher
         ).getAllRooms("user@example.com");
 
         assertThat(result.isSuccess()).isTrue();
-        assertThat(result.getData()).extracting("id").containsExactly("room-2", "room-1");
-        assertThat(result.getData()).extracting("recentMessageCount").containsExactly(7, 3);
+        assertThat(result.getData()).extracting("id").containsExactly("room-1", "room-2");
+        assertThat(result.getData()).extracting("recentMessageCount").containsExactly(3, 7);
+        assertThat(result.getData().getFirst().getCreator().getId()).isEqualTo("creator-1");
+        assertThat(result.getData().getFirst().getCreator().getName()).isNull();
         assertThat(result.getData().getFirst().getParticipants())
                 .allSatisfy(participant -> assertThat(participant.getName()).isNull());
-        verify(userRepository, never()).findAllRoomSummariesById(any());
-        verify(recentMessageCounter).countRecentMessages(List.of("room-1", "room-2"));
+        verify(roomListSnapshotService).getRoomSnapshots();
         verify(userRepository, never()).findById(anyString());
         verify(recentMessageCounter, never()).countRecentMessages(anyString());
     }
@@ -79,6 +91,7 @@ class RoomServiceTest {
                 roomRepository,
                 userRepository,
                 recentMessageCounter,
+                roomListSnapshotService,
                 passwordEncoder,
                 eventPublisher
         ).joinRoom("room-1", null, "user@example.com");
@@ -114,6 +127,7 @@ class RoomServiceTest {
                 roomRepository,
                 userRepository,
                 recentMessageCounter,
+                roomListSnapshotService,
                 passwordEncoder,
                 eventPublisher
         ).joinRoom("room-1", null, "user@example.com");
