@@ -3,6 +3,10 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import ChatMessages from '../ChatMessages';
 
+const { userMessageRender } = vi.hoisted(() => ({
+  userMessageRender: vi.fn(),
+}));
+
 vi.mock('../../hooks/useInfiniteScroll', () => ({
   useInfiniteScroll: () => ({ sentinelRef: { current: null } }),
 }));
@@ -24,22 +28,60 @@ vi.mock('../FileMessage', () => ({
 }));
 
 vi.mock('../UserMessage', () => ({
-  default: ({ msg }) => React.createElement('div', { 'data-testid': 'message' }, msg.content),
+  default: ({ msg }) => {
+    userMessageRender(msg._id);
+    return React.createElement('div', { 'data-testid': 'message' }, msg.content);
+  },
 }));
 
 describe('ChatMessages', () => {
-  it('renders messages sorted by timestamp without mutating the input array', () => {
+  it('renders only the appended row when the message list grows', () => {
+    const currentUser = { id: 'me' };
+    const firstMessage = {
+      _id: 'message-1',
+      content: 'first',
+      timestamp: '2026-06-20T11:00:00.000Z',
+      sender: { _id: 'other' },
+    };
+    const secondMessage = {
+      _id: 'message-2',
+      content: 'second',
+      timestamp: '2026-06-20T11:01:00.000Z',
+      sender: { _id: 'other' },
+    };
+    const { rerender } = render(
+      React.createElement(ChatMessages, {
+        messages: [firstMessage],
+        currentUser,
+        hasMoreMessages: false,
+      })
+    );
+
+    userMessageRender.mockClear();
+    rerender(
+      React.createElement(ChatMessages, {
+        messages: [firstMessage, secondMessage],
+        currentUser,
+        hasMoreMessages: false,
+      })
+    );
+
+    expect(userMessageRender).toHaveBeenCalledTimes(1);
+    expect(userMessageRender).toHaveBeenCalledWith('message-2');
+  });
+
+  it('renders the ordered message state without copying or re-sorting it', () => {
     const messages = [
-      {
-        _id: 'late',
-        content: 'late message',
-        timestamp: '2026-06-20T12:00:00.000Z',
-        sender: { _id: 'other' },
-      },
       {
         _id: 'early',
         content: 'early message',
         timestamp: '2026-06-20T11:00:00.000Z',
+        sender: { _id: 'other' },
+      },
+      {
+        _id: 'late',
+        content: 'late message',
+        timestamp: '2026-06-20T12:00:00.000Z',
         sender: { _id: 'other' },
       },
     ];

@@ -1,4 +1,9 @@
-import { deriveUniqueSortedMessages } from '../messages/useMessageList';
+import {
+  deriveUniqueSortedMessages,
+  mergeSortedMessageArrays,
+} from '../messages/useMessageList';
+
+const INCOMING_MESSAGE_FLUSH_DELAY_MS = 50;
 
 export const processLoadedRoomMessages = ({
   loadedMessages,
@@ -34,18 +39,22 @@ export const processLoadedRoomMessages = ({
   return nextMessages;
 };
 
-export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =>
-  messages.map(msg => {
-    if (!messageIds.includes(msg._id)) {
-      return msg;
-    }
+export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) => {
+  const messageIdSet = new Set(messageIds || []);
+  if (!userId || messageIdSet.size === 0) {
+    return messages;
+  }
+
+  let changed = false;
+  const nextMessages = messages.map(msg => {
+    if (!messageIdSet.has(msg._id)) return msg;
 
     const alreadyRead = msg.readers?.some(reader =>
       reader.userId === userId || reader._id === userId
     );
-    if (alreadyRead) {
-      return msg;
-    }
+    if (alreadyRead) return msg;
+
+    changed = true;
 
     return {
       ...msg,
@@ -53,22 +62,15 @@ export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =
     };
   });
 
-export const appendIncomingMessage = (messages, incoming) => {
-  if (!incoming?._id) {
-    return messages;
-  }
-
-  if (messages.some(msg => msg._id === incoming._id)) {
-    return messages;
-  }
-
-  return [...messages, incoming];
+  return changed ? nextMessages : messages;
 };
 
 export const createRoomEventHandlers = ({
   mountedRef,
   messageProcessingRef,
   processedMessageIds,
+  pendingIncomingMessagesRef = { current: new Map() },
+  incomingMessageFlushTimeoutRef = { current: null },
   initialLoadCompletedRef,
   processMessages,
   setRoom,
@@ -82,6 +84,27 @@ export const createRoomEventHandlers = ({
   handleReactionUpdate,
   showRejectedMessage,
 }) => {
+  const flushIncomingMessages = () => {
+    incomingMessageFlushTimeoutRef.current = null;
+    if (!mountedRef.current || pendingIncomingMessagesRef.current.size === 0) return;
+
+    const incomingMessages = Array.from(pendingIncomingMessagesRef.current.values())
+      .sort((a, b) => new Date(a.timestamp || 0) - new Date(b.timestamp || 0));
+    pendingIncomingMessagesRef.current.clear();
+
+    setMessages(prev => mergeSortedMessageArrays(prev, incomingMessages));
+  };
+
+  const enqueueIncomingMessage = (incoming) => {
+    pendingIncomingMessagesRef.current.set(incoming._id, incoming);
+    if (incomingMessageFlushTimeoutRef.current) return;
+
+    incomingMessageFlushTimeoutRef.current = setTimeout(
+      flushIncomingMessages,
+      INCOMING_MESSAGE_FLUSH_DELAY_MS
+    );
+  };
+
   const handlePreviousMessages = (response) => {
     if (!mountedRef.current || messageProcessingRef.current) return;
     try {
@@ -112,10 +135,10 @@ export const createRoomEventHandlers = ({
       setMessages(prev => applyReadReceipts(prev, payload));
     },
     onMessage: (incoming) => {
-      if (!mountedRef.current || messageProcessingRef.current) return;
+      if (!mountedRef.current) return;
       if (!incoming?._id || processedMessageIds.current.has(incoming._id)) return;
       processedMessageIds.current.add(incoming._id);
-      setMessages(prev => appendIncomingMessage(prev, incoming));
+      enqueueIncomingMessage(incoming);
     },
     onPreviousMessagesLoaded: handlePreviousMessages,
     onMessageReactionUpdate: (data) => {

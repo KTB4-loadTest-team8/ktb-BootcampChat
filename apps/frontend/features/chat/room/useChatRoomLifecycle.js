@@ -35,6 +35,8 @@ export const useChatRoomLifecycle = ({
     cleanupInProgressRef,
     previousMessagesRef,
     processedMessageIds,
+    pendingIncomingMessagesRef,
+    incomingMessageFlushTimeoutRef,
     initialLoadCompletedRef,
     loadMoreTimeoutRef,
     messageLoadAttemptRef,
@@ -71,6 +73,7 @@ export const useChatRoomLifecycle = ({
 
   useEffect(() => {
     mountedRef.current = true;
+    const pendingIncomingMessages = pendingIncomingMessagesRef?.current;
 
     return () => {
       mountedRef.current = false;
@@ -78,6 +81,12 @@ export const useChatRoomLifecycle = ({
       if (loadMoreTimeoutRef.current) {
         clearTimeout(loadMoreTimeoutRef.current);
       }
+
+      if (incomingMessageFlushTimeoutRef?.current) {
+        clearTimeout(incomingMessageFlushTimeoutRef.current);
+        incomingMessageFlushTimeoutRef.current = null;
+      }
+      pendingIncomingMessages?.clear();
 
       if (socketRef.current?.connected && roomId && !cleanupInProgressRef.current) {
         cleanupRef.current(CLEANUP_REASONS.UNMOUNT);
@@ -89,6 +98,8 @@ export const useChatRoomLifecycle = ({
     mountedRef,
     cleanupInProgressRef,
     loadMoreTimeoutRef,
+    pendingIncomingMessagesRef,
+    incomingMessageFlushTimeoutRef,
   ]);
 
   // 구독은 ref 가 아니라 활성 소켓 자체에 묶는다. ref 는 교체돼도 렌더를 유발하지

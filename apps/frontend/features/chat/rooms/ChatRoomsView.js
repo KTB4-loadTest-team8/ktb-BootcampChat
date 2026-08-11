@@ -8,7 +8,7 @@ import {
   CONNECTION_STATUS,
 } from './useServerConnection';
 import { useRoomList } from './useRoomList';
-import RoomsTable from './RoomsTable';
+import RoomsTable, { ROOMS_TABLE_HEIGHT } from './RoomsTable';
 import ConnectionErrorBanner from '@/components/ConnectionErrorBanner';
 
 const STATUS_CONFIG = {
@@ -222,33 +222,39 @@ export default function ChatRoomsView({ router }) {
           </Callout.Root>
         )}
 
-        {connectionStatus === CONNECTION_STATUS.ERROR ? (
-          <ConnectionErrorBanner message="채팅 서버와 연결할 수 없습니다. 잠시 후 다시 시도해주세요." />
-        ) : loading ? (
-          <Box $css={{ padding: '$400' }}>
-            <LoadingIndicator text="채팅방 목록을 불러오는 중..." />
-          </Box>
-        ) : rooms.length > 0 ? (
-          <RoomsTable
-            rooms={rooms}
-            connectionStatus={connectionStatus}
-            onJoinRoom={handleJoinRoom}
-          />
-        ) : !error && (
-          <VStack
-            $css={{ gap: '$300', alignItems: 'center', padding: '$400' }}
-            data-testid="rooms-empty"
-          >
-            <Text typography="body1">생성된 채팅방이 없습니다.</Text>
-            <Button
-              colorPalette="primary"
-              onClick={() => router.push('/chat/new')}
-              disabled={connectionStatus !== CONNECTION_STATUS.CONNECTED}
+        <Box
+          data-testid="rooms-list-surface"
+          style={{ minHeight: `${ROOMS_TABLE_HEIGHT}px` }}
+        >
+          {connectionStatus === CONNECTION_STATUS.ERROR ? (
+            <ConnectionErrorBanner message="채팅 서버와 연결할 수 없습니다. 잠시 후 다시 시도해주세요." />
+          ) : loading ? (
+            <Box $css={{ padding: '$400' }}>
+              <LoadingIndicator text="채팅방 목록을 불러오는 중..." />
+            </Box>
+          ) : rooms.length > 0 ? (
+            <RoomsTable
+              rooms={rooms}
+              connectionStatus={connectionStatus}
+              onJoinRoom={handleJoinRoom}
+            />
+          ) : !error && (
+            <VStack
+              $css={{ gap: '$300', alignItems: 'center', padding: '$400' }}
+              style={{ minHeight: `${ROOMS_TABLE_HEIGHT}px`, justifyContent: 'center' }}
+              data-testid="rooms-empty"
             >
-              새 채팅방 만들기
-            </Button>
-          </VStack>
-        )}
+              <Text typography="body1">생성된 채팅방이 없습니다.</Text>
+              <Button
+                colorPalette="primary"
+                onClick={() => router.push('/chat/new')}
+                disabled={connectionStatus !== CONNECTION_STATUS.CONNECTED}
+              >
+                새 채팅방 만들기
+              </Button>
+            </VStack>
+          )}
+        </Box>
       </VStack>
     </Box>
   );

@@ -20,6 +20,7 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
     room,
     messages,
     connected,
+    activeSocket,
     connectionStatus,
     messageLoadError,
     retryMessageLoad,
@@ -141,6 +142,8 @@ const ChatRoomView = ({ roomId, onNavigate, onReplace, asPath }) => {
         loadingMessages={loadingMessages}
         hasMoreMessages={hasMoreMessages}
         onLoadMore={handleLoadMore}
+        socket={activeSocket}
+        connected={connected}
       />
     );
   };

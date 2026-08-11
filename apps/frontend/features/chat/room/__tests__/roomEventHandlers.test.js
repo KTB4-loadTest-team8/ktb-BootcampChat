@@ -1,12 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  appendIncomingMessage,
   applyReadReceipts,
   createRoomEventHandlers,
   processLoadedRoomMessages,
 } from '../roomEventHandlers';
 
 describe('roomEventHandlers', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('processes loaded messages through the shared message list reducer', () => {
     const processedMessageIds = { current: new Set(['message-1']) };
     const initialLoadCompletedRef = { current: false };
@@ -65,18 +72,19 @@ describe('roomEventHandlers', () => {
     ]);
   });
 
-  it('appends incoming messages only once', () => {
-    const currentMessages = [{ _id: 'message-1' }];
+  it('preserves the message array when a read receipt changes nothing', () => {
+    const messages = [{
+      _id: 'message-1',
+      readers: [{ userId: 'user-2', readAt: 'existing' }],
+    }];
 
-    expect(appendIncomingMessage(currentMessages, { _id: 'message-1' })).toBe(
-      currentMessages
-    );
-    expect(
-      appendIncomingMessage(currentMessages, { _id: 'message-2' })
-    ).toEqual([{ _id: 'message-1' }, { _id: 'message-2' }]);
+    expect(applyReadReceipts(messages, {
+      userId: 'user-2',
+      messageIds: ['message-1'],
+    })).toBe(messages);
   });
 
-  it('keeps live messages when the updater is invoked twice (StrictMode)', () => {
+  it('batches live messages and keeps the updater pure in StrictMode', () => {
     const mountedRef = { current: true };
     const processedMessageIds = { current: new Set() };
     let committed = [];
@@ -107,9 +115,15 @@ describe('roomEventHandlers', () => {
       showRejectedMessage: vi.fn(),
     });
 
-    handlers.onMessage({ _id: 'message-live' });
+    handlers.onMessage({ _id: 'message-late', timestamp: '2026-07-07T00:00:02.000Z' });
+    handlers.onMessage({ _id: 'message-early', timestamp: '2026-07-07T00:00:01.000Z' });
+    handlers.onMessage({ _id: 'message-late', timestamp: '2026-07-07T00:00:02.000Z' });
 
-    expect(committed.map(message => message._id)).toEqual(['message-live']);
+    expect(setMessages).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(50);
+
+    expect(setMessages).toHaveBeenCalledTimes(1);
+    expect(committed.map(message => message._id)).toEqual(['message-early', 'message-late']);
   });
 
   it('creates room event handlers with mounted and processing guards', () => {
@@ -158,6 +172,7 @@ describe('roomEventHandlers', () => {
     handlers.onMessageReactionUpdate({ messageId: 'message-1' });
     handlers.onSessionEnded();
     handlers.onError({ code: 'MESSAGE_REJECTED', message: 'blocked' });
+    vi.advanceTimersByTime(50);
 
     expect(setRoom).toHaveBeenCalledWith(expect.any(Function));
     expect(setMessages).toHaveBeenCalledTimes(2);
