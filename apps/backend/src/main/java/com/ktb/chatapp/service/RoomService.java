@@ -16,6 +16,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -27,12 +29,15 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class RoomService {
 
+    static final String ROOMS_CACHE = "rooms";
+
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final RecentMessageCounter recentMessageCounter;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
 
+    @Cacheable(cacheNames = ROOMS_CACHE, key = "#name", sync = true)
     public RoomsResponse getAllRooms(String name) {
 
         try {
@@ -120,6 +125,7 @@ public class RoomService {
         }
     }
 
+    @CacheEvict(cacheNames = ROOMS_CACHE, allEntries = true)
     public Room createRoom(CreateRoomRequest createRoomRequest, String name) {
         User creator = userRepository.findByEmail(name)
             .orElseThrow(() -> new RuntimeException("사용자를 찾을 수 없습니다: " + name));
@@ -151,6 +157,7 @@ public class RoomService {
         return roomRepository.findById(roomId);
     }
 
+    @CacheEvict(cacheNames = ROOMS_CACHE, allEntries = true)
     public Room joinRoom(String roomId, String password, String name) {
         Optional<Room> roomOpt = roomRepository.findById(roomId);
         if (roomOpt.isEmpty()) {
