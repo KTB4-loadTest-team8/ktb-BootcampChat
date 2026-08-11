@@ -19,9 +19,11 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 /**
@@ -78,6 +80,35 @@ public class S3Storage implements StoragePort {
     @Override
     public void delete(String key) {
         s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
+    }
+
+    @Override
+    public Optional<URI> directUploadUrl(String key, String contentType, long size, Duration ttl) {
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType(contentType)
+                .contentLength(size)
+                .build();
+        return Optional.of(URI.create(s3Presigner.presignPutObject(PutObjectPresignRequest.builder()
+                        .signatureDuration(ttl)
+                        .putObjectRequest(request)
+                        .build())
+                .url()
+                .toString()));
+    }
+
+    @Override
+    public boolean exists(String key) {
+        try {
+            s3Client.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+            return true;
+        } catch (S3Exception ex) {
+            if (ex.statusCode() == 404) {
+                return false;
+            }
+            throw ex;
+        }
     }
 
     @Override
