@@ -1,13 +1,10 @@
 package com.ktb.chatapp.controller;
 
 import com.ktb.chatapp.dto.StandardResponse;
-import com.ktb.chatapp.dto.DirectFileUploadCompleteRequest;
-import com.ktb.chatapp.dto.DirectFileUploadRequest;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.FileAccess;
 import com.ktb.chatapp.service.FileAccessService;
-import com.ktb.chatapp.service.DirectFileUploadResult;
 import com.ktb.chatapp.service.FileService;
 import com.ktb.chatapp.service.FileUploadResult;
 import com.ktb.chatapp.service.PreviewNotSupportedException;
@@ -19,7 +16,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.Principal;
@@ -61,7 +57,7 @@ public class FileController {
         @ApiResponse(responseCode = "500", description = "서버 내부 오류",
             content = @Content(schema = @Schema(implementation = StandardResponse.class)))
     })
-    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PostMapping("/upload")
     public ResponseEntity<?> uploadFile(
             @Parameter(description = "업로드할 파일") @RequestParam("file") MultipartFile file,
             Principal principal) {
@@ -76,7 +72,15 @@ public class FileController {
                 response.put("success", true);
                 response.put("message", "파일 업로드 성공");
                 
-                response.put("file", fileData(result));
+                Map<String, Object> fileData = new HashMap<>();
+                fileData.put("_id", result.getFile().getId());
+                fileData.put("filename", result.getFile().getFilename());
+                fileData.put("originalname", result.getFile().getOriginalname());
+                fileData.put("mimetype", result.getFile().getMimetype());
+                fileData.put("size", result.getFile().getSize());
+                fileData.put("uploadDate", result.getFile().getUploadDate());
+                
+                response.put("file", fileData);
 
                 return ResponseEntity.ok(response);
             } else {
@@ -94,76 +98,6 @@ public class FileController {
             errorResponse.put("error", e.getMessage());
             return ResponseEntity.status(500).body(errorResponse);
         }
-    }
-
-    /**
-     * 기존 multipart 경로와 같은 URL을 유지하면서 S3 Presigned PUT URL을 발급한다.
-     * E2E는 이 경로의 200 응답을 계속 관찰할 수 있고, 파일 바이트는 API EC2를 통과하지 않는다.
-     */
-    @PostMapping(value = "/upload", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> prepareDirectUpload(
-            @Valid @RequestBody DirectFileUploadRequest request,
-            Principal principal) {
-        try {
-            User user = userRepository.findByEmail(principal.getName())
-                    .orElseThrow(() -> new UsernameNotFoundException("User not found: " + principal.getName()));
-
-            DirectFileUploadResult result = fileService.prepareDirectUpload(
-                    request.filename(), request.contentType(), request.size(), user.getId());
-            if (!result.isDirectUpload()) {
-                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
-                        "success", false,
-                        "message", "현재 스토리지는 직접 업로드를 지원하지 않습니다."));
-            }
-
-            Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
-            response.put("directUpload", true);
-            response.put("uploadUrl", result.getUploadUrl().toString());
-            response.put("file", fileData(FileUploadResult.builder()
-                    .success(true)
-                    .file(result.getFile())
-                    .build()));
-            return ResponseEntity.ok(response);
-        } catch (Exception e) {
-            log.error("파일 직접 업로드 URL 발급 중 에러 발생", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(
-                    "success", false,
-                    "message", "파일 업로드 URL 발급 중 오류가 발생했습니다."));
-        }
-    }
-
-    /** S3 PUT이 성공한 뒤에만 파일 메타데이터를 채팅 메시지에 사용할 수 있게 확정한다. */
-    @PostMapping(value = "/upload/complete", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<?> completeDirectUpload(
-            @Valid @RequestBody DirectFileUploadCompleteRequest request,
-            Principal principal) {
-        try {
-            User user = userRepository.findByEmail(principal.getName())
-                    .orElseThrow(() -> new UsernameNotFoundException("User not found: " + principal.getName()));
-            FileUploadResult result = fileService.completeDirectUpload(request.fileId(), user.getId());
-
-            return ResponseEntity.ok(Map.of(
-                    "success", true,
-                    "message", "파일 업로드 성공",
-                    "file", fileData(result)));
-        } catch (Exception e) {
-            log.error("파일 직접 업로드 완료 처리 중 에러 발생", e);
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
-                    "success", false,
-                    "message", "파일 업로드 완료 처리 중 오류가 발생했습니다."));
-        }
-    }
-
-    private Map<String, Object> fileData(FileUploadResult result) {
-        Map<String, Object> fileData = new HashMap<>();
-        fileData.put("_id", result.getFile().getId());
-        fileData.put("filename", result.getFile().getFilename());
-        fileData.put("originalname", result.getFile().getOriginalname());
-        fileData.put("mimetype", result.getFile().getMimetype());
-        fileData.put("size", result.getFile().getSize());
-        fileData.put("uploadDate", result.getFile().getUploadDate());
-        return fileData;
     }
 
     /**

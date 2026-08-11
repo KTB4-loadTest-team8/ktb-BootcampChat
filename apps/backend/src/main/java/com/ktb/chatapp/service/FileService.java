@@ -12,10 +12,6 @@ public interface FileService {
      */
     String storeFile(MultipartFile file, String subDirectory);
 
-    DirectFileUploadResult prepareDirectUpload(
-            String originalFilename, String contentType, long size, String uploaderId);
-
-    FileUploadResult completeDirectUpload(String fileId, String uploaderId);
-
     boolean deleteFile(String fileId, String requesterId);
 }
+
