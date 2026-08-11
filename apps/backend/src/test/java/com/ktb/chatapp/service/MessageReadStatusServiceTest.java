@@ -15,6 +15,7 @@ import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.AggregationUpdate;
 import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.data.mongodb.core.query.UpdateDefinition;
+import org.springframework.scheduling.annotation.Async;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -66,5 +67,15 @@ class MessageReadStatusServiceTest {
 
         verifyNoInteractions(mongoTemplate);
         assertThat(meterRegistry.find(ChatRoomMetrics.READ_UPDATE_DURATION).timer()).isNull();
+    }
+
+    @Test
+    void updateReadStatusAsync_usesBoundedMessageReadExecutor() throws NoSuchMethodException {
+        Async async = MessageReadStatusService.class
+                .getMethod("updateReadStatusAsync", List.class, String.class)
+                .getAnnotation(Async.class);
+
+        assertThat(async).isNotNull();
+        assertThat(async.value()).isEqualTo("messageReadStatusTaskExecutor");
     }
 }

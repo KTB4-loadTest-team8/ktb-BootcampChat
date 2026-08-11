@@ -24,12 +24,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.TestPropertySource;
-import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.mock;
 
 @SpringBootTest
 @Import({MongoTestContainer.class, RedisTestContainer.class})
@@ -48,7 +45,6 @@ class MessageLoaderIntegrationTest {
     @Autowired
     private FileRepository fileRepository;
 
-    @MockitoSpyBean
     private MessageReadStatusService messageReadStatusService;
 
     @Autowired
@@ -66,6 +62,7 @@ class MessageLoaderIntegrationTest {
         roomId = faker.internet().uuid();
         userId = faker.internet().uuid();
         baseTime = LocalDateTime.now().minusHours(1);
+        messageReadStatusService = mock(MessageReadStatusService.class);
 
         // MessageLoader 인스턴스 생성
         messageLoader = new MessageLoader(
@@ -84,8 +81,6 @@ class MessageLoaderIntegrationTest {
                 .build();
         userRepository.save(testUser);
 
-        // MessageReadStatusService mock 설정
-        doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
     }
 
     @AfterEach
