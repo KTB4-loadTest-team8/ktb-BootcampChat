@@ -87,4 +87,25 @@ describe('useReactionHandling', () => {
     expect(socketClient.sendMessageReaction).not.toHaveBeenCalled();
     expect(Toast.error).toHaveBeenCalledWith('리액션 제거에 실패했습니다.');
   });
+
+  it('keeps reaction handlers stable when only the messages prop changes', () => {
+    const setMessages = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ nextMessages }) => useReactionHandling({
+        currentUser,
+        messages: nextMessages,
+        setMessages,
+      }),
+      { initialProps: { nextMessages: messages } }
+    );
+    const addHandler = result.current.handleReactionAdd;
+    const removeHandler = result.current.handleReactionRemove;
+
+    rerender({
+      nextMessages: [...messages, { _id: 'message-2', reactions: {} }],
+    });
+
+    expect(result.current.handleReactionAdd).toBe(addHandler);
+    expect(result.current.handleReactionRemove).toBe(removeHandler);
+  });
 });

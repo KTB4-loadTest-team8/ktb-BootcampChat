@@ -1,3 +1,26 @@
+const getTimestamp = message => new Date(message?.timestamp || 0).getTime();
+
+export const mergeSortedMessageArrays = (currentMessages, incomingMessages) => {
+  const merged = [];
+  let currentIndex = 0;
+  let incomingIndex = 0;
+
+  while (currentIndex < currentMessages.length && incomingIndex < incomingMessages.length) {
+    if (getTimestamp(currentMessages[currentIndex]) <= getTimestamp(incomingMessages[incomingIndex])) {
+      merged.push(currentMessages[currentIndex]);
+      currentIndex += 1;
+    } else {
+      merged.push(incomingMessages[incomingIndex]);
+      incomingIndex += 1;
+    }
+  }
+
+  return merged.concat(
+    currentMessages.slice(currentIndex),
+    incomingMessages.slice(incomingIndex)
+  );
+};
+
 export const deriveUniqueSortedMessages = (
   currentMessages,
   incomingMessages,
@@ -23,15 +46,12 @@ export const deriveUniqueSortedMessages = (
     return true;
   });
 
-  const allMessages = [...currentMessages, ...newMessages].sort((a, b) => {
-    return new Date(a.timestamp || 0) - new Date(b.timestamp || 0);
-  });
-
-  const messageMap = new Map();
-  allMessages.forEach((message) => messageMap.set(message._id, message));
+  const sortedIncomingMessages = [...newMessages].sort(
+    (a, b) => getTimestamp(a) - getTimestamp(b)
+  );
 
   return {
-    messages: Array.from(messageMap.values()),
+    messages: mergeSortedMessageArrays(currentMessages, sortedIncomingMessages),
     processedMessageIds: nextProcessedMessageIds,
   };
 };

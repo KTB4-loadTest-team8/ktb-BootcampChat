@@ -34,6 +34,8 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     previousMessagesRef,
     messageProcessingRef,
     processedMessageIds,
+    pendingIncomingMessagesRef,
+    incomingMessageFlushTimeoutRef,
     loadMoreTimeoutRef,
   } = refs;
 
@@ -102,6 +104,12 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
         loadMoreTimeoutRef.current = null;
       }
 
+      if (incomingMessageFlushTimeoutRef?.current) {
+        clearTimeout(incomingMessageFlushTimeoutRef.current);
+        incomingMessageFlushTimeoutRef.current = null;
+      }
+      pendingIncomingMessagesRef?.current?.clear();
+
       // Reset refs
       processedMessageIds.current.clear();
       previousMessagesRef.current.clear();
@@ -134,6 +142,8 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     socketRef,
     loadMoreTimeoutRef,
     processedMessageIds,
+    pendingIncomingMessagesRef,
+    incomingMessageFlushTimeoutRef,
     previousMessagesRef,
     messageProcessingRef,
     userRooms,

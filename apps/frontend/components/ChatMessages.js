@@ -1,10 +1,54 @@
-import React, { useCallback, useMemo } from 'react';
+import React from 'react';
 import { Spinner, Text, VStack } from '@vapor-ui/core';
 import SystemMessage from './SystemMessage';
 import FileMessage from './FileMessage';
 import UserMessage from './UserMessage';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+
+const NOOP = () => {};
+const MESSAGE_WRAPPER_STYLE = {
+  contentVisibility: 'auto',
+  containIntrinsicSize: '1px 96px',
+};
+
+const MessageRow = React.memo(({
+  msg,
+  currentUser,
+  currentUserId,
+  room,
+  onReactionAdd,
+  onReactionRemove,
+}) => {
+  if (!msg) return null;
+
+  const MessageComponent = {
+    system: SystemMessage,
+    file: FileMessage,
+  }[msg.type] || UserMessage;
+  const senderId = msg.sender?._id || msg.sender?.id || msg.sender;
+  const isMine = msg.type !== 'system' && Boolean(
+    currentUserId && senderId === currentUserId
+  );
+
+  return (
+    <div
+      style={MESSAGE_WRAPPER_STYLE}
+    >
+      <MessageComponent
+        currentUser={currentUser}
+        room={room}
+        onReactionAdd={onReactionAdd}
+        onReactionRemove={onReactionRemove}
+        msg={msg}
+        content={msg.content}
+        isMine={msg.type !== 'system' ? isMine : undefined}
+        isStreaming={msg.type === 'ai' ? (msg.isStreaming || false) : undefined}
+      />
+    </div>
+  );
+});
+MessageRow.displayName = 'MessageRow';
 
 const LoadingIndicator = React.memo(() => (
   <div className="loading-messages">
@@ -35,9 +79,9 @@ const ChatMessages = ({
   room = null,
   loadingMessages = false,
   hasMoreMessages = true,
-  onReactionAdd = () => {},
-  onReactionRemove = () => {},
-  onLoadMore = () => {}
+  onReactionAdd = NOOP,
+  onReactionRemove = NOOP,
+  onLoadMore = NOOP,
 }) => {
   // 무한 스크롤 훅
   const { sentinelRef } = useInfiniteScroll(
@@ -47,64 +91,15 @@ const ChatMessages = ({
   );
 
   // 자동 스크롤 훅 (스크롤 복원 기능 포함)
-  const { containerRef, scrollToBottom, isNearBottom } = useAutoScroll(
+  const { containerRef } = useAutoScroll(
     messages,
-    currentUser?.id,
+    currentUser?._id || currentUser?.id,
     loadingMessages,
     100 // 하단 100px 이내면 자동 스크롤
   );
-  const isMine = useCallback((msg) => {
-    if (!msg?.sender || !currentUser?.id) return false;
-    
-    return (
-      msg.sender._id === currentUser.id || 
-      msg.sender.id === currentUser.id ||
-      msg.sender === currentUser.id
-    );
-  }, [currentUser?.id]);
+  const currentUserId = currentUser?._id || currentUser?.id;
 
-  const allMessages = useMemo(() => {
-    if (!Array.isArray(messages)) return [];
-
-    return [...messages].sort((a, b) => {
-      if (!a?.timestamp || !b?.timestamp) return 0;
-      return new Date(a.timestamp) - new Date(b.timestamp);
-    });
-  }, [messages]);
-
-  const renderMessage = useCallback((msg, idx) => {
-    if (!msg) return null;
-
-    const commonProps = {
-      currentUser,
-      room,
-      onReactionAdd,
-      onReactionRemove
-    };
-
-    const MessageComponent = {
-      system: SystemMessage,
-      file: FileMessage
-    }[msg.type] || UserMessage;
-
-    return (
-      <div
-        key={msg._id || `msg-${idx}`}
-        style={{
-          contentVisibility: 'auto',
-          containIntrinsicSize: '1px 96px',
-        }}
-      >
-      <MessageComponent
-        {...commonProps}
-        msg={msg}
-        content={msg.content}
-        isMine={msg.type !== 'system' ? isMine(msg) : undefined}
-        isStreaming={msg.type === 'ai' ? (msg.isStreaming || false) : undefined}
-      />
-      </div>
-    );
-  }, [currentUser, room, isMine, onReactionAdd, onReactionRemove]);
+  const allMessages = Array.isArray(messages) ? messages : [];
 
   return (
     <VStack
@@ -142,7 +137,17 @@ const ChatMessages = ({
       {allMessages.length === 0 ? (
         <EmptyMessages />
       ) : (
-        allMessages.map((msg, idx) => renderMessage(msg, idx))
+        allMessages.map((msg, idx) => (
+          <MessageRow
+            key={msg?._id || `msg-${idx}`}
+            msg={msg}
+            currentUser={currentUser}
+            currentUserId={currentUserId}
+            room={room}
+            onReactionAdd={onReactionAdd}
+            onReactionRemove={onReactionRemove}
+          />
+        ))
       )}
     </VStack>
   );
