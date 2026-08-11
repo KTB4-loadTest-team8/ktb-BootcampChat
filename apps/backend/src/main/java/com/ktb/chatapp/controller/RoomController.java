@@ -184,7 +184,7 @@ public class RoomController {
     @Operation(summary = "채팅방 상세 조회", description = "채팅방 ID로 특정 채팅방의 상세 정보를 조회합니다.")
     @ApiResponses({
         @ApiResponse(responseCode = "200", description = "채팅방 조회 성공",
-            content = @Content(schema = @Schema(implementation = RoomResponse.class))),
+            content = @Content(schema = @Schema(implementation = RoomDetailResponse.class))),
         @ApiResponse(responseCode = "401", description = "인증 실패",
             content = @Content(schema = @Schema(implementation = StandardResponse.class))),
         @ApiResponse(responseCode = "404", description = "채팅방을 찾을 수 없음",
@@ -207,7 +207,7 @@ public class RoomController {
             }
 
             Room room = roomOpt.get();
-            RoomResponse roomResponse = mapToRoomResponse(room, principal.getName());
+            RoomDetailResponse roomResponse = mapToRoomDetailResponse(room, principal.getName());
             metricStatus = "success";
 
             return ResponseEntity.ok(
@@ -320,6 +320,43 @@ public class RoomController {
                 .createdAtDateTime(room.getCreatedAt() != null ? room.getCreatedAt() : LocalDateTime.now())
                 .isCreator(isCreator)
                 .recentMessageCount((int) recentMessageCount)
+                .build();
+    }
+
+    private RoomDetailResponse mapToRoomDetailResponse(Room room, String name) {
+        Set<String> userIds = new HashSet<>();
+        if (room.getCreator() != null) {
+            userIds.add(room.getCreator());
+        }
+        if (room.getParticipantIds() != null) {
+            userIds.addAll(room.getParticipantIds());
+        }
+
+        Map<String, User> usersById = new HashMap<>();
+        userRepository.findAllById(userIds)
+                .forEach(user -> usersById.put(user.getId(), user));
+
+        User creator = usersById.get(room.getCreator());
+        if (creator == null) {
+            throw new RuntimeException("Creator not found for room " + room.getId());
+        }
+
+        List<UserResponse> participantSummaries = room.getParticipantIds() == null
+                ? List.of()
+                : room.getParticipantIds().stream()
+                .map(usersById::get)
+                .filter(Objects::nonNull)
+                .map(UserResponse::from)
+                .toList();
+
+        return RoomDetailResponse.builder()
+                .id(room.getId())
+                .name(room.getName())
+                .hasPassword(room.isHasPassword())
+                .creator(UserResponse.from(creator))
+                .participants(participantSummaries)
+                .createdAtDateTime(room.getCreatedAt() != null ? room.getCreatedAt() : LocalDateTime.now())
+                .isCreator(room.getCreator().equals(name))
                 .build();
     }
 }
