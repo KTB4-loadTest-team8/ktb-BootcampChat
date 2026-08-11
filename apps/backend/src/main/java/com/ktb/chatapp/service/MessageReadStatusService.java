@@ -1,13 +1,14 @@
 package com.ktb.chatapp.service;
 
 import com.ktb.chatapp.model.Message;
+import java.time.LocalDateTime;
+import java.util.List;
+import org.bson.Document;
 import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.aggregation.AggregationOperation;
+import org.springframework.data.mongodb.core.aggregation.AggregationUpdate;
 import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
-import org.springframework.data.mongodb.core.query.Update;
-import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,37 +40,53 @@ public class MessageReadStatusService {
                 .build();
 
         try {
-            // 기존 데이터 중 readers가 null인 문서도 기존 로직처럼 빈 배열로 초기화
-            Query nullReadersQuery = Query.query(
-                    Criteria.where("_id")
-                            .in(messageIds)
-                            .and("readers").is(null)
+            Criteria unreadOrNullReaders = new Criteria().orOperator(
+                    Criteria.where("readers").is(null),
+                    Criteria.where("readers.userId").ne(userId)
             );
+            Query query = Query.query(new Criteria().andOperator(
+                    Criteria.where("_id").in(messageIds),
+                    unreadOrNullReaders
+            ));
 
-            mongoTemplate.updateMulti(
-                    nullReadersQuery,
-                    new Update().set("readers", new ArrayList<>()),
+            var result = mongoTemplate.updateMulti(
+                    query,
+                    buildReadStatusUpdate(readerInfo),
                     Message.class
             );
 
-            // 해당 사용자가 아직 읽지 않은 메시지에만 읽음 정보 추가
-            Query unreadMessagesQuery = Query.query(
-                    Criteria.where("_id")
-                            .in(messageIds)
-                            .and("readers.userId").ne(userId)
-            );
-
-            mongoTemplate.updateMulti(
-                    unreadMessagesQuery,
-                    new Update().push("readers", readerInfo),
-                    Message.class
-            );
-
-            log.debug("Read status updated for {} messages by user {}",
-                    messageIds.size(), userId);
+            log.debug("Read status updated for {} of {} messages by user {}",
+                    result.getModifiedCount(), messageIds.size(), userId);
 
         } catch (Exception e) {
             log.error("Read status update error for user {}", userId, e);
         }
+    }
+
+    private AggregationUpdate buildReadStatusUpdate(Message.MessageReader readerInfo) {
+        Document readerDocument = new Document("userId", readerInfo.getUserId())
+                .append("readAt", readerInfo.getReadAt());
+
+        Document currentReaders = new Document("$ifNull", List.of("$readers", List.of()));
+        Document readerUserIds = new Document("$map", new Document("input", "$$currentReaders")
+                .append("as", "reader")
+                .append("in", "$$reader.userId"));
+        Document appendReader = new Document("$concatArrays", List.of(
+                "$$currentReaders",
+                List.of(readerDocument)
+        ));
+        Document readersValue = new Document("$let", new Document(
+                "vars", new Document("currentReaders", currentReaders)
+        ).append("in", new Document("$cond", List.of(
+                new Document("$in", List.of(readerInfo.getUserId(), readerUserIds)),
+                "$$currentReaders",
+                appendReader
+        ))));
+
+        AggregationOperation setReaders = context -> new Document(
+                "$set", new Document("readers", readersValue)
+        );
+
+        return AggregationUpdate.from(List.of(setReaders));
     }
 }
