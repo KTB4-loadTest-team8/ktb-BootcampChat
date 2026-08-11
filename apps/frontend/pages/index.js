@@ -34,6 +34,22 @@ const Login = () => {
   const router = useRouter();
   const { login } = useAuth();
 
+  // `/login` is kept as a compatibility entry point for existing links and
+  // the registration flow. Once a user actually submits the login form, `/`
+  // is the canonical login URL. Replacing the history entry avoids a second
+  // document navigation and keeps the validation/API error visible.
+  const normalizeLoginUrl = () => {
+    if (typeof window === 'undefined' || window.location.pathname !== '/login') {
+      return;
+    }
+
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/${window.location.search}${window.location.hash}`
+    );
+  };
+
   // 서버 연결 상태 확인
   useEffect(() => {
     // 클라이언트 사이드에서만 실행되도록 보장
@@ -78,6 +94,8 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    normalizeLoginUrl();
 
     // 폼 유효성 검사
     if (!validateForm()) {
@@ -197,6 +215,7 @@ const Login = () => {
             type="submit"
             size="lg"
             disabled={loading}
+            onClick={normalizeLoginUrl}
             data-testid="login-submit-button"
           >
             {loading ? '로그인 중...' : '로그인'}
