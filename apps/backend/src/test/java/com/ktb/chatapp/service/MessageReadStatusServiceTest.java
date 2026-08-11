@@ -1,7 +1,9 @@
 package com.ktb.chatapp.service;
 
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.Message;
 import com.mongodb.client.result.UpdateResult;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.List;
 import org.bson.Document;
 import org.junit.jupiter.api.Test;
@@ -36,7 +38,9 @@ class MessageReadStatusServiceTest {
                 any(Query.class), any(UpdateDefinition.class), eq(Message.class)))
                 .thenReturn(UpdateResult.acknowledged(2L, 2L, null));
 
-        new MessageReadStatusService(mongoTemplate).updateReadStatus(messageIds, userId);
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        new MessageReadStatusService(mongoTemplate, new ChatRoomMetrics(meterRegistry))
+                .updateReadStatus(messageIds, userId);
 
         ArgumentCaptor<Query> queryCaptor = ArgumentCaptor.forClass(Query.class);
         ArgumentCaptor<UpdateDefinition> updateCaptor = ArgumentCaptor.forClass(UpdateDefinition.class);
@@ -48,12 +52,19 @@ class MessageReadStatusServiceTest {
         assertThat(updateCaptor.getValue()).isInstanceOf(AggregationUpdate.class);
         assertThat(updateCaptor.getValue().getUpdateObject().toString())
                 .contains("$set", "$ifNull", "$map", "$in", "$concatArrays");
+        assertThat(meterRegistry.get(ChatRoomMetrics.READ_UPDATE_DURATION)
+                .tag("status", "success")
+                .timer()
+                .count()).isEqualTo(1);
     }
 
     @Test
     void updateReadStatus_withEmptyMessageIds_doesNothing() {
-        new MessageReadStatusService(mongoTemplate).updateReadStatus(List.of(), "user-1");
+        SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
+        new MessageReadStatusService(mongoTemplate, new ChatRoomMetrics(meterRegistry))
+                .updateReadStatus(List.of(), "user-1");
 
         verifyNoInteractions(mongoTemplate);
+        assertThat(meterRegistry.find(ChatRoomMetrics.READ_UPDATE_DURATION).timer()).isNull();
     }
 }

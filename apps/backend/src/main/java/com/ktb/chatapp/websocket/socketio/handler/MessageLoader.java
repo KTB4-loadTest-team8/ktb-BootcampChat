@@ -3,11 +3,13 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import io.micrometer.core.instrument.Timer;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -34,6 +36,7 @@ public class MessageLoader {
     private final UserRepository userRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
+    private final ChatRoomMetrics chatRoomMetrics;
 
     private static final int BATCH_SIZE = 30;
 
@@ -41,14 +44,22 @@ public class MessageLoader {
      * 메시지 로드
      */
     public FetchMessagesResponse loadMessages(FetchMessagesRequest data, String userId) {
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
+        String loadType = data.before() == null ? "initial" : "history";
         try {
-            return loadMessagesInternal(data.roomId(), data.limit(BATCH_SIZE), data.before(LocalDateTime.now()), userId);
+            FetchMessagesResponse response = loadMessagesInternal(
+                    data.roomId(), data.limit(BATCH_SIZE), data.before(LocalDateTime.now()), userId);
+            metricStatus = "success";
+            return response;
         } catch (Exception e) {
             log.error("Error loading initial messages for room {}", data.roomId(), e);
             return FetchMessagesResponse.builder()
                     .messages(emptyList())
                     .hasMore(false)
                     .build();
+        } finally {
+            chatRoomMetrics.recordMessageLoad(timerSample, metricStatus, loadType);
         }
     }
 

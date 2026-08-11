@@ -2,6 +2,7 @@ package com.ktb.chatapp.controller;
 
 import com.ktb.chatapp.annotation.RateLimit;
 import com.ktb.chatapp.dto.*;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
@@ -16,6 +17,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import io.micrometer.core.instrument.Timer;
 import jakarta.validation.Valid;
 import java.security.Principal;
 import java.time.Duration;
@@ -45,6 +47,7 @@ public class RoomController {
     private final UserRepository userRepository;
     private final RecentMessageCounter recentMessageCounter;
     private final RoomService roomService;
+    private final ChatRoomMetrics chatRoomMetrics;
 
     @Value("${spring.profiles.active:production}")
     private String activeProfile;
@@ -192,9 +195,12 @@ public class RoomController {
     })
     @GetMapping("/{roomId}")
     public ResponseEntity<?> getRoomById(@Parameter(description = "채팅방 ID", example = "60d5ec49f1b2c8b9e8c4f2a1") @PathVariable String roomId, Principal principal) {
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
         try {
             Optional<Room> roomOpt = roomService.findRoomById(roomId);
             if (roomOpt.isEmpty()) {
+                metricStatus = "not_found";
                 return ResponseEntity.status(404).body(
                     StandardResponse.error("채팅방을 찾을 수 없습니다.")
                 );
@@ -202,6 +208,7 @@ public class RoomController {
 
             Room room = roomOpt.get();
             RoomResponse roomResponse = mapToRoomResponse(room, principal.getName());
+            metricStatus = "success";
 
             return ResponseEntity.ok(
                 Map.of(
@@ -215,6 +222,8 @@ public class RoomController {
             return ResponseEntity.status(500).body(
                 StandardResponse.error("채팅방 정보를 불러오는데 실패했습니다.")
             );
+        } finally {
+            chatRoomMetrics.recordRoomDetail(timerSample, metricStatus);
         }
     }
 

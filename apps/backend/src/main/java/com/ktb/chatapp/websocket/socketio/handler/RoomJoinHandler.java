@@ -7,6 +7,7 @@ import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
 import com.ktb.chatapp.dto.UserResponse;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
@@ -16,6 +17,7 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
+import io.micrometer.core.instrument.Timer;
 import java.time.LocalDateTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
@@ -43,24 +45,30 @@ public class RoomJoinHandler {
     private final MessageLoader messageLoader;
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
+    private final ChatRoomMetrics chatRoomMetrics;
     
     @OnEvent(JOIN_ROOM)
     public void handleJoinRoom(SocketIOClient client, String roomId) {
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
         try {
             String userId = getUserId(client);
             String userName = getUserName(client);
 
             if (userId == null) {
+                metricStatus = "unauthorized";
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "Unauthorized"));
                 return;
             }
             
             if (userRepository.findById(userId).isEmpty()) {
+                metricStatus = "user_not_found";
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
                 return;
             }
             
             if (roomRepository.findById(roomId).isEmpty()) {
+                metricStatus = "room_not_found";
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
@@ -70,6 +78,7 @@ public class RoomJoinHandler {
                 log.debug("User {} already in room {}", userId, roomId);
                 client.joinRoom(roomId);
                 client.sendEvent(JOIN_ROOM_SUCCESS, Map.of("roomId", roomId));
+                metricStatus = "already_joined";
                 return;
             }
 
@@ -99,6 +108,7 @@ public class RoomJoinHandler {
             // 업데이트된 room 다시 조회하여 최신 participantIds 가져오기
             Optional<Room> roomOpt = roomRepository.findById(roomId);
             if (roomOpt.isEmpty()) {
+                metricStatus = "room_not_found";
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
@@ -125,12 +135,15 @@ public class RoomJoinHandler {
 
             log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
                 userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());
+            metricStatus = "success";
 
         } catch (Exception e) {
             log.error("Error handling joinRoom", e);
             client.sendEvent(JOIN_ROOM_ERROR, Map.of(
                 "message", e.getMessage() != null ? e.getMessage() : "채팅방 입장에 실패했습니다."
             ));
+        } finally {
+            chatRoomMetrics.recordRoomJoin(timerSample, metricStatus);
         }
     }
     

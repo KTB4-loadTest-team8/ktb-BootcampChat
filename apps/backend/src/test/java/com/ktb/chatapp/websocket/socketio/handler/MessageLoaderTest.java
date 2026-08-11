@@ -2,6 +2,7 @@ package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.File;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
@@ -9,6 +10,7 @@ import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import net.datafaker.Faker;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +49,7 @@ class MessageLoaderTest {
     
     @InjectMocks
     private MessageLoader messageLoader;
+    private SimpleMeterRegistry meterRegistry;
     
     private Faker faker;
     private List<Message> testMessages;
@@ -58,12 +61,14 @@ class MessageLoaderTest {
         faker = new Faker();
         roomId = faker.internet().uuid();
         userId = faker.internet().uuid();
+        meterRegistry = new SimpleMeterRegistry();
         
         messageLoader = new MessageLoader(
                 messageRepository,
                 userRepository,
                 new MessageResponseMapper(fileRepository),
-                messageReadStatusService
+                messageReadStatusService,
+                new ChatRoomMetrics(meterRegistry)
         );
         
         var testUser = User.builder()
@@ -120,6 +125,10 @@ class MessageLoaderTest {
         verify(userRepository).findAllById(Set.of(userId));
         verify(userRepository, never()).findById(anyString());
         verify(fileRepository, never()).findById(anyString());
+        assertThat(meterRegistry.get(ChatRoomMetrics.MESSAGE_LOAD_DURATION)
+                .tags("status", "success", "load_type", "initial")
+                .timer()
+                .count()).isEqualTo(1);
         
         // 시간순 정렬 확인 (오름차순: 오래된 것 → 최신 것)
         // [50시간 전, 49시간 전, ..., 21시간 전]
@@ -218,5 +227,9 @@ class MessageLoaderTest {
         
         assertThat(result.getMessages()).isEmpty();
         assertThat(result.isHasMore()).isFalse();
+        assertThat(meterRegistry.get(ChatRoomMetrics.MESSAGE_LOAD_DURATION)
+                .tags("status", "error", "load_type", "initial")
+                .timer()
+                .count()).isEqualTo(1);
     }
 }

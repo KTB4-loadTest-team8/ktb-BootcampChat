@@ -1,6 +1,8 @@
 package com.ktb.chatapp.service;
 
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.Message;
+import io.micrometer.core.instrument.Timer;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.bson.Document;
@@ -22,6 +24,7 @@ import org.springframework.stereotype.Service;
 public class MessageReadStatusService {
 
     private final MongoTemplate mongoTemplate;
+    private final ChatRoomMetrics chatRoomMetrics;
 
     /**
      * 메시지 읽음 상태 업데이트
@@ -33,6 +36,9 @@ public class MessageReadStatusService {
         if (messageIds.isEmpty()) {
             return;
         }
+
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
 
         var readerInfo = Message.MessageReader.builder()
                 .userId(userId)
@@ -57,9 +63,12 @@ public class MessageReadStatusService {
 
             log.debug("Read status updated for {} of {} messages by user {}",
                     result.getModifiedCount(), messageIds.size(), userId);
+            metricStatus = "success";
 
         } catch (Exception e) {
             log.error("Read status update error for user {}", userId, e);
+        } finally {
+            chatRoomMetrics.recordReadUpdate(timerSample, metricStatus);
         }
     }
 

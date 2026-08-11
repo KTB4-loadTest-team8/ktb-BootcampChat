@@ -6,6 +6,7 @@ import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.model.Message;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.FileRepository;
 import com.ktb.chatapp.repository.MessageRepository;
@@ -50,6 +51,9 @@ class MessageLoaderIntegrationTest {
     @MockitoSpyBean
     private MessageReadStatusService messageReadStatusService;
 
+    @Autowired
+    private ChatRoomMetrics chatRoomMetrics;
+
     private MessageLoader messageLoader;
     private Faker faker;
     private String roomId;
@@ -68,7 +72,8 @@ class MessageLoaderIntegrationTest {
                 messageRepository,
                 userRepository,
                 new MessageResponseMapper(fileRepository),
-                messageReadStatusService
+                messageReadStatusService,
+                chatRoomMetrics
         );
 
         // 테스트 사용자 생성 및 저장

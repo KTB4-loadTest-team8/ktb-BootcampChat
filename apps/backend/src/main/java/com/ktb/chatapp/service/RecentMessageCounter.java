@@ -1,6 +1,8 @@
 package com.ktb.chatapp.service;
 
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.repository.MessageRepository;
+import io.micrometer.core.instrument.Timer;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -19,10 +21,19 @@ public class RecentMessageCounter {
     static final Duration RECENT_WINDOW = Duration.ofMinutes(30);
 
     private final MessageRepository messageRepository;
+    private final ChatRoomMetrics chatRoomMetrics;
 
     public int countRecentMessages(String roomId) {
-        LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
-        return (int) messageRepository.countRecentMessagesByRoomId(roomId, since);
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
+        try {
+            LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
+            int count = (int) messageRepository.countRecentMessagesByRoomId(roomId, since);
+            metricStatus = "success";
+            return count;
+        } finally {
+            chatRoomMetrics.recordRecentCount(timerSample, metricStatus, "single");
+        }
     }
 
     public Map<String, Integer> countRecentMessages(Collection<String> roomIds) {
@@ -30,12 +41,21 @@ public class RecentMessageCounter {
             return Map.of();
         }
 
-        LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
-        return messageRepository.countRecentMessagesByRoomIds(roomIds, since).stream()
-                .collect(Collectors.toMap(
-                        room -> room.getRoomId(),
-                        room -> Math.toIntExact(room.getCount()),
-                        Integer::sum
-                ));
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
+        try {
+            LocalDateTime since = LocalDateTime.now().minus(RECENT_WINDOW);
+            Map<String, Integer> counts = messageRepository
+                    .countRecentMessagesByRoomIds(roomIds, since).stream()
+                    .collect(Collectors.toMap(
+                            room -> room.getRoomId(),
+                            room -> Math.toIntExact(room.getCount()),
+                            Integer::sum
+                    ));
+            metricStatus = "success";
+            return counts;
+        } finally {
+            chatRoomMetrics.recordRecentCount(timerSample, metricStatus, "batch");
+        }
     }
 }

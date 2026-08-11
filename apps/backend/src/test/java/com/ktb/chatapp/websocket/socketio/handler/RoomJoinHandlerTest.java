@@ -6,6 +6,7 @@ import com.corundumstudio.socketio.SocketIOServer;
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
@@ -15,6 +16,7 @@ import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -50,9 +52,11 @@ class RoomJoinHandlerTest {
     @Mock private BroadcastOperations roomOperations;
 
     private RoomJoinHandler handler;
+    private SimpleMeterRegistry meterRegistry;
 
     @BeforeEach
     void setUp() {
+        meterRegistry = new SimpleMeterRegistry();
         handler = new RoomJoinHandler(
                 socketIOServer,
                 messageRepository,
@@ -61,7 +65,8 @@ class RoomJoinHandlerTest {
                 userRooms,
                 messageLoader,
                 messageResponseMapper,
-                roomLeaveHandler);
+                roomLeaveHandler,
+                new ChatRoomMetrics(meterRegistry));
     }
 
     @Test
@@ -71,6 +76,11 @@ class RoomJoinHandlerTest {
         handler.handleJoinRoom(client, "room-1");
 
         verify(client).sendEvent(eq(JOIN_ROOM_ERROR), any());
+        org.assertj.core.api.Assertions.assertThat(meterRegistry
+                .get(ChatRoomMetrics.ROOM_JOIN_DURATION)
+                .tag("status", "unauthorized")
+                .timer()
+                .count()).isEqualTo(1);
     }
 
     @Test
@@ -118,5 +128,10 @@ class RoomJoinHandlerTest {
         verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), any());
         verify(userRepository).findAllById(Set.of("user-1", "user-2"));
         verify(userRepository, never()).findById("user-2");
+        org.assertj.core.api.Assertions.assertThat(meterRegistry
+                .get(ChatRoomMetrics.ROOM_JOIN_DURATION)
+                .tag("status", "success")
+                .timer()
+                .count()).isEqualTo(1);
     }
 }
