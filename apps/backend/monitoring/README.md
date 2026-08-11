@@ -92,7 +92,7 @@ ENVIRONMENT=prod docker compose -f docker-compose.o11y.yaml up -d
 ### 4. Grafana 대시보드
 
 Grafana에 로그인하면 `grafana/provisioning/dashboards/`의 대시보드가 자동으로
-프로비저닝됩니다. 현재 제공되는 대시보드는 하나입니다.
+프로비저닝됩니다.
 
 #### Node Exporter Dashboard
 
@@ -100,16 +100,33 @@ Grafana에 로그인하면 `grafana/provisioning/dashboards/`의 대시보드가
 
 node-exporter가 수집한 호스트 지표를 보여줍니다 (CPU, 메모리, 디스크, 네트워크).
 스크랩 대상은 `prometheus/targets/node-exporters.prod.yml`에 등록된 전 노드입니다.
+`service` 변수는 `node_uname_info`의 `service` 라벨(예: `redis`)로 필터링하는데,
+이 라벨은 host-level 지표 구분용일 뿐 redis-exporter가 수집하는 Redis 자체
+지표(메모리, 히트율 등)와는 무관합니다. Redis 지표는 아래 Redis Exporter
+Dashboard를 사용하세요.
 
 **언제 사용?**
 - 서버 리소스 포화 여부 확인
 - 노드별 부하 분포 비교
 - 용량 계획 수립
 
+#### Redis Exporter Dashboard
+
+**용도**: Redis 클러스터 자체 지표 모니터링 (redis-exporter, `:9121/metrics`)
+
+`redis` job으로 스크랩되는 노드별(`node` 라벨: redis1/redis2/redis3) 메모리 사용량,
+캐시 히트율, 초당 커맨드 처리량, 커넥션 수, 만료/축출 키 등을 보여줍니다.
+스크랩 대상은 `prometheus.prod.yml`의 `redis` job에 등록된 노드입니다.
+
+**언제 사용?**
+- 캐시 히트율 저하, 메모리 압박 여부 확인
+- 노드별 Redis 부하 비교
+- 만료/축출(evicted) 키 급증 등 이상 탐지
+
 #### 대시보드 추가하기
 
-애플리케이션·MongoDB·Redis 지표는 Prometheus에 수집되고 있지만 대시보드는
-포함되어 있지 않습니다. 필요한 대시보드는 직접 만들거나
+애플리케이션 지표는 Prometheus에 수집되고 있지만 대시보드는 아직 없습니다.
+필요한 대시보드는 직접 만들거나
 [Grafana 공식 대시보드](https://grafana.com/grafana/dashboards/)에서 가져와
 `grafana/provisioning/dashboards/`에 JSON으로 두면 10초 안에 반영됩니다.
 
