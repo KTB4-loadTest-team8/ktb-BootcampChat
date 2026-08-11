@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.SerializationException;
 import org.springframework.stereotype.Component;
 
 /**
@@ -33,7 +34,7 @@ public class SessionRedisStore implements SessionStore {
 
     @Override
     public Optional<Session> findByUserId(String userId) {
-        Object cached = sessionRedisTemplate.opsForValue().get(key(userId));
+        Object cached = readCachedValue(userId);
         if (cached instanceof Session session) {
             return Optional.of(session);
         }
@@ -100,8 +101,29 @@ public class SessionRedisStore implements SessionStore {
     }
 
     private Session cachedSession(String userId) {
-        Object cached = sessionRedisTemplate.opsForValue().get(key(userId));
+        Object cached = readCachedValue(userId);
         return cached instanceof Session session ? session : null;
+    }
+
+    /**
+     * A rolling deployment can leave a session value written with a previous
+     * Redis serializer. Do not let that stale value turn every authenticated
+     * request into a 500 from the security filter. Remove only the broken
+     * session key and let the normal Mongo migration path recover it.
+     */
+    private Object readCachedValue(String userId) {
+        try {
+            return sessionRedisTemplate.opsForValue().get(key(userId));
+        } catch (SerializationException exception) {
+            log.warn("Removing incompatible Redis session value for userId: {}", userId, exception);
+            try {
+                sessionRedisTemplate.delete(key(userId));
+            } catch (RuntimeException deleteException) {
+                log.warn("Could not remove incompatible Redis session value for userId: {}",
+                        userId, deleteException);
+            }
+            return null;
+        }
     }
 
     private void deleteEverywhere(String userId) {
