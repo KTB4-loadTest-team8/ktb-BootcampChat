@@ -1,8 +1,17 @@
 import 'server-only';
+import {
+  ACCESS_TOKEN_COOKIE,
+  SESSION_ID_COOKIE,
+  USER_COOKIE,
+  AUTH_COOKIE_MAX_AGE_SECONDS,
+} from '@/lib/auth/authCookies';
 
-export const ACCESS_TOKEN_COOKIE = 'ktb_access_token';
-export const SESSION_ID_COOKIE = 'ktb_session_id';
-export const AUTH_COOKIE_MAX_AGE_SECONDS = 2 * 60 * 60;
+export {
+  ACCESS_TOKEN_COOKIE,
+  SESSION_ID_COOKIE,
+  USER_COOKIE,
+  AUTH_COOKIE_MAX_AGE_SECONDS,
+};
 
 export const BACKEND_API_URL = (
   process.env.API_URL ||
@@ -24,8 +33,10 @@ export const getBackendAuthHeaders = (session) => ({
   'x-session-id': session.sessionId,
 });
 
+// 성능 우선: 인증을 쿠키로 일원화하되, 소켓 handshake/직결 API 가 토큰을 읽어야 하므로
+// httpOnly 를 끈다(클라이언트 JS 접근 허용). secure 는 https(production)에서만.
 export const getAuthCookieOptions = () => ({
-  httpOnly: true,
+  httpOnly: false,
   secure: process.env.NODE_ENV === 'production',
   sameSite: 'lax',
   path: '/',
@@ -42,4 +53,5 @@ export const clearAuthCookies = (response) => {
   const options = { ...getAuthCookieOptions(), maxAge: 0 };
   response.cookies.set(ACCESS_TOKEN_COOKIE, '', options);
   response.cookies.set(SESSION_ID_COOKIE, '', options);
+  response.cookies.set(USER_COOKIE, '', options);
 };

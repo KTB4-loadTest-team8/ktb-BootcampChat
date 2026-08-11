@@ -1,15 +1,26 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  LAST_TOKEN_VERIFICATION_KEY,
-  USER_STORAGE_KEY,
-} from '../../auth/authStorage';
 import { createApiClient, getAuthHeaders } from '../client';
+import { defaultCookieJar } from '../../auth/cookieStore';
+import {
+  ACCESS_TOKEN_COOKIE,
+  USER_COOKIE,
+  LAST_TOKEN_VERIFICATION_COOKIE,
+} from '../../auth/authCookies';
 
 const readHeader = (headers, name) => headers.get?.(name) ?? headers[name];
 
+const clearAllCookies = () => {
+  document.cookie.split(';').forEach((entry) => {
+    const name = entry.split('=')[0].trim();
+    if (name) {
+      document.cookie = `${name}=; path=/; max-age=0`;
+    }
+  });
+};
+
 describe('api client', () => {
   beforeEach(() => {
-    localStorage.clear();
+    clearAllCookies();
   });
 
   it('builds auth headers from a session', () => {
@@ -71,14 +82,9 @@ describe('api client', () => {
   });
 
   it('clears stored users on auth expiration', async () => {
-    localStorage.setItem(
-      USER_STORAGE_KEY,
-      JSON.stringify({
-        id: 'user-1',
-        token: 'token-1',
-      })
-    );
-    localStorage.setItem(LAST_TOKEN_VERIFICATION_KEY, '3000');
+    defaultCookieJar.set(ACCESS_TOKEN_COOKIE, 'token-1');
+    defaultCookieJar.set(USER_COOKIE, JSON.stringify({ id: 'user-1' }));
+    defaultCookieJar.set(LAST_TOKEN_VERIFICATION_COOKIE, '3000');
 
     const client = createApiClient({
       baseURL: 'http://api.test',
@@ -104,8 +110,9 @@ describe('api client', () => {
       code: 'AUTH_EXPIRED',
       status: 401,
     });
-    expect(localStorage.getItem(USER_STORAGE_KEY)).toBeNull();
-    expect(localStorage.getItem(LAST_TOKEN_VERIFICATION_KEY)).toBeNull();
+    expect(defaultCookieJar.get(ACCESS_TOKEN_COOKIE)).toBeNull();
+    expect(defaultCookieJar.get(USER_COOKIE)).toBeNull();
+    expect(defaultCookieJar.get(LAST_TOKEN_VERIFICATION_COOKIE)).toBeNull();
   });
 
   it('can leave 401 responses to endpoint-specific handlers', async () => {
