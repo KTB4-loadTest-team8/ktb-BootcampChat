@@ -88,7 +88,7 @@ class MessageLoaderTest {
         
         lenient().when(userRepository.findAllById(anySet()))
                 .thenReturn(List.of(testUser));
-        lenient().doNothing().when(messageReadStatusService).updateReadStatus(anyList(), anyString());
+        lenient().doNothing().when(messageReadStatusService).updateReadStatusAsync(anyList(), anyString());
     }
     
     private Message createMessage(String id, LocalDateTime timestamp) {
@@ -125,6 +125,7 @@ class MessageLoaderTest {
         verify(userRepository).findAllById(Set.of(userId));
         verify(userRepository, never()).findById(anyString());
         verify(fileRepository, never()).findById(anyString());
+        verify(messageReadStatusService).updateReadStatusAsync(anyList(), eq(userId));
         assertThat(meterRegistry.get(ChatRoomMetrics.MESSAGE_LOAD_DURATION)
                 .tags("status", "success", "load_type", "initial")
                 .timer()

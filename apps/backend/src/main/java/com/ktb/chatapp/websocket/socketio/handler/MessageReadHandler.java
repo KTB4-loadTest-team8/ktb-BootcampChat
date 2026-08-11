@@ -70,7 +70,8 @@ public class MessageReadHandler {
                 return;
             }
             
-            messageReadStatusService.updateReadStatus(data.getMessageIds(), userId);
+            // 읽음 상태 저장은 브로드캐스트 응답을 지연시키지 않도록 비동기로 처리한다.
+            messageReadStatusService.updateReadStatusAsync(data.getMessageIds(), userId);
 
             MessagesReadResponse response = new MessagesReadResponse(userId, data.getMessageIds());
 

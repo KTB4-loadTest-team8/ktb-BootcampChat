@@ -79,7 +79,8 @@ public class MessageLoader {
         List<Message> sortedMessages = messages.reversed();
         
         var messageIds = sortedMessages.stream().map(Message::getId).toList();
-        messageReadStatusService.updateReadStatus(messageIds, userId);
+        // 읽음 상태 저장은 메시지 응답을 막지 않도록 bounded async executor로 분리한다.
+        messageReadStatusService.updateReadStatusAsync(messageIds, userId);
         
         Map<String, User> usersById = findUsersById(sortedMessages);
 

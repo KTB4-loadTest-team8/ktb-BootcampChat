@@ -13,6 +13,7 @@ import org.springframework.data.mongodb.core.query.Criteria;
 import org.springframework.data.mongodb.core.query.Query;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 /**
@@ -70,6 +71,18 @@ public class MessageReadStatusService {
         } finally {
             chatRoomMetrics.recordReadUpdate(timerSample, metricStatus);
         }
+    }
+
+    /**
+     * 채팅방 입장·메시지 조회 응답과 분리해 읽음 상태를 갱신한다.
+     *
+     * <p>읽음 상태 저장 실패는 메시지 로딩 실패로 전파되지 않아야 하므로, 이 메서드는
+     * bounded executor에서 실행된다. 동기 호출이 필요한 배치·통합 테스트와 별도 운영
+     * 경로는 기존 {@link #updateReadStatus(List, String)}를 사용할 수 있다.</p>
+     */
+    @Async("messageReadStatusTaskExecutor")
+    public void updateReadStatusAsync(List<String> messageIds, String userId) {
+        updateReadStatus(messageIds, userId);
     }
 
     private AggregationUpdate buildReadStatusUpdate(Message.MessageReader readerInfo) {
