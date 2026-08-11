@@ -3,20 +3,25 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.ktb.chatapp.dto.FetchMessagesRequest;
 import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.MessageResponse;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.Message;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.MessageReadStatusService;
-import jakarta.annotation.Nullable;
+import io.micrometer.core.instrument.Timer;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
@@ -31,6 +36,7 @@ public class MessageLoader {
     private final UserRepository userRepository;
     private final MessageResponseMapper messageResponseMapper;
     private final MessageReadStatusService messageReadStatusService;
+    private final ChatRoomMetrics chatRoomMetrics;
 
     private static final int BATCH_SIZE = 30;
 
@@ -39,13 +45,34 @@ public class MessageLoader {
      */
     public FetchMessagesResponse loadMessages(FetchMessagesRequest data, String userId) {
         try {
-            return loadMessagesInternal(data.roomId(), data.limit(BATCH_SIZE), data.before(LocalDateTime.now()), userId);
+            return loadMessagesOrThrow(data, userId);
         } catch (Exception e) {
             log.error("Error loading initial messages for room {}", data.roomId(), e);
             return FetchMessagesResponse.builder()
                     .messages(emptyList())
                     .hasMore(false)
                     .build();
+        }
+    }
+
+    /**
+     * 메시지를 로드하고, 조회 실패를 호출자에게 전달한다.
+     *
+     * <p>채팅방 입장 직후의 비동기 초기 조회는 빈 채팅방과 조회 실패를 구분해야 하므로
+     * 이 메서드를 사용한다. 기존 이전 메시지 조회 이벤트는 {@link #loadMessages}를 통해
+     * 빈 응답 호환성을 유지한다.</p>
+     */
+    public FetchMessagesResponse loadMessagesOrThrow(FetchMessagesRequest data, String userId) {
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
+        String loadType = data.before() == null ? "initial" : "history";
+        try {
+            FetchMessagesResponse response = loadMessagesInternal(
+                    data.roomId(), data.limit(BATCH_SIZE), data.before(LocalDateTime.now()), userId);
+            metricStatus = "success";
+            return response;
+        } finally {
+            chatRoomMetrics.recordMessageLoad(timerSample, metricStatus, loadType);
         }
     }
 
@@ -56,8 +83,8 @@ public class MessageLoader {
             String userId) {
         Pageable pageable = PageRequest.of(0, limit, Sort.by("timestamp").descending());
 
-        Page<Message> messagePage = messageRepository
-                .findByRoomIdAndTimestampBefore(roomId, before, pageable);
+        Slice<Message> messagePage =
+                messageRepository.findByRoomIdAndTimestampBefore(roomId, before, pageable);
 
         List<Message> messages = messagePage.getContent();
 
@@ -65,15 +92,14 @@ public class MessageLoader {
         List<Message> sortedMessages = messages.reversed();
         
         var messageIds = sortedMessages.stream().map(Message::getId).toList();
-        messageReadStatusService.updateReadStatus(messageIds, userId);
+        // 읽음 상태 저장은 메시지 응답을 막지 않도록 bounded async executor로 분리한다.
+        messageReadStatusService.updateReadStatusAsync(messageIds, userId);
         
+        Map<String, User> usersById = findUsersById(sortedMessages);
+
         // 메시지 응답 생성
-        List<MessageResponse> messageResponses = sortedMessages.stream()
-                .map(message -> {
-                    var user = findUserById(message.getSenderId());
-                    return messageResponseMapper.mapToMessageResponse(message, user);
-                })
-                .collect(Collectors.toList());
+        List<MessageResponse> messageResponses = messageResponseMapper
+                .mapToMessageResponses(sortedMessages, usersById);
 
         boolean hasMore = messagePage.hasNext();
 
@@ -86,15 +112,19 @@ public class MessageLoader {
                 .build();
     }
 
-    /**
-     * AI 경우 null 반환 가능
-     */
-    @Nullable
-    private User findUserById(String id) {
-        if (id == null) {
-            return null;
+    private Map<String, User> findUsersById(List<Message> messages) {
+        Set<String> senderIds = messages.stream()
+                .map(Message::getSenderId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+
+        if (senderIds.isEmpty()) {
+            return Map.of();
         }
-        return userRepository.findById(id)
-                .orElse(null);
+
+        Map<String, User> usersById = new HashMap<>();
+        userRepository.findAllById(senderIds)
+                .forEach(user -> usersById.put(user.getId(), user));
+        return usersById;
     }
 }

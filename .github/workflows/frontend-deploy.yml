@@ -1,0 +1,646 @@
+name: Frontend Deploy
+
+# 정적 자산:
+#   .next/static → S3
+#   public       → S3
+#
+# 동적 서버:
+#   .next/standalone → EC2
+#
+# 중요:
+# deploy-static → deploy-server 순서를 반드시 유지한다.
+# 새 Next 서버가 새 chunk를 참조하기 전에 S3에 chunk가 먼저 존재해야 한다.
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/frontend/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.github/workflows/frontend-deploy.yml'
+
+  workflow_dispatch:
+
+# 동시에 두 배포가 실행되어 current 심볼릭 링크가 꼬이는 것을 방지한다.
+# 이미 진행 중인 배포는 취소하지 않는다.
+concurrency:
+  group: frontend-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  APP_DIR: apps/frontend
+  DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/home/ubuntu/ktb-chat-frontend' }}
+  EC2_USER: ${{ vars.EC2_USER || 'ubuntu' }}
+
+jobs:
+
+  # ============================================================
+  # 1. Build
+  # ============================================================
+  #
+  # 빌드는 한 번만 한다.
+  #
+  # 동일한 build 결과에서:
+  #
+  #   static.tar.gz → S3
+  #   server.tar.gz → EC2 #1, EC2 #2
+  #
+  # 를 생성한다.
+  # ============================================================
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      # ----------------------------------------------------------
+      # Source
+      # ----------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------
+      # GitHub Variables 검증
+      # ----------------------------------------------------------
+      - name: Validate deployment variables
+        env:
+          API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          SOCKET_URL: ${{ vars.NEXT_PUBLIC_SOCKET_URL }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          S3_BUCKET: ${{ vars.S3_BUCKET }}
+          EC2_HOSTS: ${{ vars.EC2_HOSTS }}
+          CLOUDFRONT_ID: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+
+          : "${API_URL:?NEXT_PUBLIC_API_URL is required}"
+          : "${SOCKET_URL:?NEXT_PUBLIC_SOCKET_URL is required}"
+          : "${AWS_REGION:?AWS_REGION is required}"
+          : "${S3_BUCKET:?S3_BUCKET is required}"
+          : "${EC2_HOSTS:?EC2_HOSTS is required}"
+          : "${CLOUDFRONT_ID:?CLOUDFRONT_DISTRIBUTION_ID is required}"
+
+          # EC2_HOSTS가 올바른 JSON 배열인지 확인
+          echo "$EC2_HOSTS" | jq empty
+
+          echo "Deployment variables validated"
+
+      # ----------------------------------------------------------
+      # pnpm / Node
+      # ----------------------------------------------------------
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # ----------------------------------------------------------
+      # Dependencies
+      # ----------------------------------------------------------
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+
+      # ----------------------------------------------------------
+      # CI
+      # ----------------------------------------------------------
+      - name: Lint
+        run: |
+          set -euo pipefail
+          pnpm --dir "$APP_DIR" lint
+
+      - name: Test
+        run: |
+          set -euo pipefail
+          pnpm --dir "$APP_DIR" test
+
+      # ----------------------------------------------------------
+      # Next.js Build
+      #
+      # NEXT_PUBLIC_*:
+      # 브라우저 JS bundle에 build 시점에 인라인된다.
+      #
+      # DEPLOYMENT_ID:
+      # Git commit SHA를 사용해서 두 EC2가 동일한 deployment ID를
+      # 사용하도록 한다.
+      # ----------------------------------------------------------
+      - name: Build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SOCKET_URL: ${{ vars.NEXT_PUBLIC_SOCKET_URL }}
+          DEPLOYMENT_ID: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          pnpm --dir "$APP_DIR" build
+
+      # ----------------------------------------------------------
+      # Build 결과 검증
+      # ----------------------------------------------------------
+      - name: Verify build output
+        run: |
+          set -euo pipefail
+
+          test -d "$APP_DIR/.next/standalone"
+          test -d "$APP_DIR/.next/static"
+          test -d "$APP_DIR/public"
+
+          test -f \
+            "$APP_DIR/.next/standalone/apps/frontend/server.js"
+
+          echo "Next standalone build verified"
+
+      # ----------------------------------------------------------
+      # Artifact 생성
+      #
+      # server.tar.gz
+      #   → EC2
+      #   → .next/standalone 전체
+      #
+      # static.tar.gz
+      #   → S3
+      #   → .next/static
+      #   → public
+      #
+      # public은 정상적으로 S3에서 서비스하지만,
+      # CloudFront behavior 문제 발생 시 EC2 fallback도 가능하도록
+      # standalone에도 복사한다.
+      # ----------------------------------------------------------
+      - name: Package artifacts
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+
+          # ------------------------------------------------------
+          # standalone 내부에 public 복사
+          # ------------------------------------------------------
+          mkdir -p \
+            "$APP_DIR/.next/standalone/apps/frontend"
+
+          rm -rf \
+            "$APP_DIR/.next/standalone/apps/frontend/public"
+
+          cp -r \
+            "$APP_DIR/public" \
+            "$APP_DIR/.next/standalone/apps/frontend/public"
+
+          # ------------------------------------------------------
+          # EC2용 standalone artifact
+          # ------------------------------------------------------
+          tar -czf dist/server.tar.gz \
+            -C "$APP_DIR/.next/standalone" \
+            .
+
+          # ------------------------------------------------------
+          # S3용 static artifact
+          # ------------------------------------------------------
+          tar -czf dist/static.tar.gz \
+            -C "$APP_DIR" \
+            .next/static \
+            public
+
+          # ------------------------------------------------------
+          # Artifact 검증
+          #
+          # 기존:
+          #   tar -tzf ... | head
+          #
+          # 는 set -o pipefail 환경에서 head가 먼저 종료되면서
+          # tar에 SIGPIPE/write error가 발생할 수 있다.
+          #
+          # 따라서 목록을 먼저 파일에 저장한 뒤 head를 사용한다.
+          # ------------------------------------------------------
+          tar -tzf dist/server.tar.gz \
+            > /tmp/server-artifact-list.txt
+
+          echo "=== server artifact ==="
+          head -n 30 /tmp/server-artifact-list.txt
+
+          echo "=== Next server entrypoint ==="
+
+          if ! grep -q \
+            'apps/frontend/server.js$' \
+            /tmp/server-artifact-list.txt
+          then
+            echo "ERROR: apps/frontend/server.js not found"
+            exit 1
+          fi
+
+          grep \
+            'apps/frontend/server.js$' \
+            /tmp/server-artifact-list.txt
+
+          echo "=== artifact size ==="
+          du -h dist/*.tar.gz
+
+      # ----------------------------------------------------------
+      # GitHub Artifact 업로드
+      # ----------------------------------------------------------
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+
+  # ============================================================
+  # 2. Static → S3
+  # ============================================================
+
+  deploy-static:
+    name: Deploy static → S3
+
+    needs:
+      - build
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # ----------------------------------------------------------
+      # Build artifact
+      # ----------------------------------------------------------
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: dist
+
+      # ----------------------------------------------------------
+      # static.tar.gz 압축 해제
+      # ----------------------------------------------------------
+      - name: Unpack static artifact
+        run: |
+          set -euo pipefail
+
+          mkdir -p out
+
+          tar -xzf \
+            dist/static.tar.gz \
+            -C out
+
+          test -d out/.next/static
+          test -d out/public
+
+      # ----------------------------------------------------------
+      # AWS 인증
+      # ----------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # ----------------------------------------------------------
+      # Next immutable chunks
+      #
+      # --delete를 사용하지 않는다.
+      #
+      # 이전 HTML 또는 rollback된 EC2가 이전 hash chunk를
+      # 요청할 수 있기 때문이다.
+      # ----------------------------------------------------------
+      - name: Upload immutable Next chunks
+        run: |
+          set -euo pipefail
+
+          aws s3 sync \
+            out/.next/static \
+            "s3://${{ vars.S3_BUCKET }}/_next/static/" \
+            --cache-control "public,max-age=31536000,immutable" \
+            --only-show-errors
+
+      # ----------------------------------------------------------
+      # public
+      #
+      # public/foo.png
+      # → /foo.png
+      #
+      # 따라서 S3 bucket root에 업로드한다.
+      #
+      # public은 filename hash가 없으므로 짧은 cache를 사용한다.
+      # ----------------------------------------------------------
+      - name: Upload public assets
+        run: |
+          set -euo pipefail
+
+          aws s3 sync \
+            out/public \
+            "s3://${{ vars.S3_BUCKET }}/" \
+            --cache-control "public,max-age=300,must-revalidate" \
+            --only-show-errors
+
+      - name: Static deployment completed
+        run: |
+          echo "Static assets deployed to S3"
+
+
+  # ============================================================
+  # 3. Next Standalone → EC2
+  # ============================================================
+  #
+  # S3 배포가 성공한 뒤에 실행한다.
+  #
+  # EC2_HOSTS 예:
+  #
+  # ["43.202.46.41","52.79.242.222"]
+  #
+  # max-parallel: 1
+  # → EC2 한 대씩 배포
+  #
+  # fail-fast: true
+  # → 한 EC2가 실패하면 이후 matrix 실행 중단
+  # ============================================================
+
+  deploy-server:
+    name: Deploy server → EC2 (${{ matrix.host }})
+
+    needs:
+      - deploy-static
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+
+      matrix:
+        host: ${{ fromJSON(vars.EC2_HOSTS) }}
+
+    steps:
+      # ----------------------------------------------------------
+      # release.sh / restart.sh 사용
+      # ----------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------
+      # server.tar.gz 다운로드
+      # ----------------------------------------------------------
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-${{ github.sha }}
+          path: dist
+
+      # ----------------------------------------------------------
+      # Artifact 확인
+      # ----------------------------------------------------------
+      - name: Verify server artifact
+        run: |
+          set -euo pipefail
+
+          test -f dist/server.tar.gz
+
+          echo "server.tar.gz found"
+
+          du -h dist/server.tar.gz
+
+      # ----------------------------------------------------------
+      # SSH 설정
+      # ----------------------------------------------------------
+      - name: Setup SSH
+        env:
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.EC2_KNOWN_HOSTS }}
+          HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SSH_KEY" \
+            > ~/.ssh/deploy_key
+
+          chmod 600 ~/.ssh/deploy_key
+
+          touch ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          # EC2_KNOWN_HOSTS가 있으면 고정된 host key 사용
+          if [ -n "$KNOWN_HOSTS" ]; then
+
+            printf '%s\n' "$KNOWN_HOSTS" \
+              >> ~/.ssh/known_hosts
+
+          # 없으면 ssh-keyscan을 통해 등록
+          else
+
+            ssh-keyscan \
+              -T 10 \
+              -H "$HOST" \
+              >> ~/.ssh/known_hosts \
+              2>/dev/null
+
+          fi
+
+      # ----------------------------------------------------------
+      # SSH 접속 테스트
+      # ----------------------------------------------------------
+      - name: Test SSH connection
+        env:
+          HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            -o ConnectTimeout=10 \
+            "$EC2_USER@$HOST" \
+            'echo "SSH OK: $(hostname)"'
+
+      # ----------------------------------------------------------
+      # release bundle 전송
+      # ----------------------------------------------------------
+      - name: Upload release bundle
+        env:
+          HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+
+          SSH="ssh -i ~/.ssh/deploy_key -o BatchMode=yes"
+          SCP="scp -i ~/.ssh/deploy_key -o BatchMode=yes"
+
+          # ------------------------------------------------------
+          # EC2 배포 디렉터리 생성
+          # ------------------------------------------------------
+          $SSH "$EC2_USER@$HOST" \
+            "mkdir -p \
+              '$DEPLOY_PATH/tmp' \
+              '$DEPLOY_PATH/bin' \
+              '$DEPLOY_PATH/releases'"
+
+          # ------------------------------------------------------
+          # Next standalone
+          # ------------------------------------------------------
+          $SCP \
+            dist/server.tar.gz \
+            "$EC2_USER@$HOST:$DEPLOY_PATH/tmp/${{ github.sha }}.tar.gz"
+
+          # ------------------------------------------------------
+          # release script
+          # ------------------------------------------------------
+          $SCP \
+            "$APP_DIR/deploy/release.sh" \
+            "$EC2_USER@$HOST:$DEPLOY_PATH/bin/release.sh"
+
+          # ------------------------------------------------------
+          # restart helper
+          # ------------------------------------------------------
+          $SCP \
+            "$APP_DIR/restart.sh" \
+            "$EC2_USER@$HOST:$DEPLOY_PATH/bin/restart.sh"
+
+      # ----------------------------------------------------------
+      # Release 실행
+      #
+      # release.sh 책임:
+      #
+      # 1. releases/<SHA> 생성
+      # 2. server.tar.gz 압축 해제
+      # 3. current symbolic link 교체
+      # 4. ktb-frontend restart
+      # 5. localhost:3000 health check
+      # 6. 실패 시 이전 current rollback
+      # ----------------------------------------------------------
+      - name: Release
+        env:
+          HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            "$EC2_USER@$HOST" \
+            "APP_ROOT='$DEPLOY_PATH' \
+             bash '$DEPLOY_PATH/bin/release.sh' \
+             '${{ github.sha }}'"
+
+      # ----------------------------------------------------------
+      # 배포 검증
+      # ----------------------------------------------------------
+      - name: Verify service
+        env:
+          HOST: ${{ matrix.host }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i ~/.ssh/deploy_key \
+            -o BatchMode=yes \
+            "$EC2_USER@$HOST" '
+              set -e
+
+              echo "=== hostname ==="
+              hostname
+
+              echo "=== systemd ==="
+              sudo systemctl is-active ktb-frontend
+
+              echo "=== current release ==="
+              readlink -f /home/ubuntu/ktb-chat-frontend/current
+
+              echo "=== port 3000 ==="
+              sudo ss -tlnp | grep ":3000"
+
+              echo "=== HTTP ==="
+              curl \
+                --fail \
+                --silent \
+                --show-error \
+                --max-time 10 \
+                http://127.0.0.1:3000/ \
+                -o /dev/null
+
+              echo "Frontend deployment verified"
+            '
+
+
+  # ============================================================
+  # 4. CloudFront invalidation
+  # ============================================================
+  #
+  # /_next/static/*:
+  # filename hash가 있으므로 invalidate하지 않는다.
+  #
+  # public:
+  # 고정된 파일명을 사용하므로 배포 후 invalidate한다.
+  # ============================================================
+
+  invalidate:
+    name: Invalidate CloudFront
+
+    needs:
+      - deploy-server
+
+    runs-on: ubuntu-latest
+
+    steps:
+      # ----------------------------------------------------------
+      # public 파일 목록을 얻기 위해 checkout
+      # ----------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ----------------------------------------------------------
+      # AWS 인증
+      # ----------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # ----------------------------------------------------------
+      # public asset invalidation
+      # ----------------------------------------------------------
+      - name: Invalidate public asset paths
+        run: |
+          set -euo pipefail
+
+          cd "$APP_DIR/public"
+
+          # public 내부의 모든 파일을 CloudFront URL path로 변환
+          #
+          # ./logo.png
+          # → /logo.png
+          #
+          # ./images/test.png
+          # → /images/test.png
+          mapfile -t PATHS < <(
+            find . \
+              -type f \
+              -print \
+              | sed 's|^\./|/|'
+          )
+
+          if [ "${#PATHS[@]}" -eq 0 ]; then
+            echo "No public assets to invalidate"
+            exit 0
+          fi
+
+          echo "CloudFront invalidation paths:"
+          printf '  %s\n' "${PATHS[@]}"
+
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "${PATHS[@]}"
+
+      - name: Deployment completed
+        run: |
+          echo "======================================"
+          echo "Frontend deployment completed"
+          echo "======================================"

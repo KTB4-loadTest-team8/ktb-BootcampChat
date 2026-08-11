@@ -272,11 +272,11 @@ o11y-restart: o11y-down o11y-up
 
 deploy-o11y:
 	@echo "📦 Deploying monitoring stack to remote servers..."
-	@echo "  → Deploying to your-o11y-server..."
-	ssh your-o11y-server "mkdir -p ~/o11y"
-	rsync -avz --delete monitoring $(COMPOSE_O11Y_FILE) your-o11y-server:~/o11y/
+	@echo "  → Deploying to o11y-server..."
+	ssh o11y-server "mkdir -p ~/o11y"
+	rsync -avz --delete monitoring $(COMPOSE_O11Y_FILE) o11y-server:~/o11y/
 	@echo ""
 	@echo "⚠️  IMPORTANT: Update .env file on remote server with production values!"
-	@echo "   SSH to your-o11y-server and edit ~/o11y/.env"
+	@echo "   SSH to o11y-server and edit ~/o11y/.env"
 	@echo ""
 	@echo "✅ Monitoring stack deployment completed!"

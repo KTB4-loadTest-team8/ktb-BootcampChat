@@ -3,12 +3,14 @@ package com.ktb.chatapp.websocket.socketio;
 import com.corundumstudio.socketio.AuthTokenListener;
 import com.corundumstudio.socketio.AuthTokenResult;
 import com.corundumstudio.socketio.SocketIOClient;
+import com.ktb.chatapp.metrics.ChatRoomMetrics;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.JwtService;
 import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
 import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
+import io.micrometer.core.instrument.Timer;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,15 +33,19 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
     private final SessionService sessionService;
     private final UserRepository userRepository;
     private final ObjectProvider<ConnectionLoginHandler> socketIOChatHandlerProvider;
+    private final ChatRoomMetrics chatRoomMetrics;
 
     @Override
     public AuthTokenResult getAuthTokenResult(Object _authToken, SocketIOClient client) {
+        Timer.Sample timerSample = chatRoomMetrics.start();
+        String metricStatus = "error";
         try {
             var authToken = (Map<?, ?>) _authToken;
             String token = authToken.get("token") != null ? authToken.get("token").toString() : null;
             String sessionId = authToken.get("sessionId") != null ? authToken.get("sessionId").toString() : null;
 
             if (token == null || sessionId == null) {
+                metricStatus = "missing_credentials";
                 log.warn("Missing authentication credentials in Socket.IO handshake - token: {}, sessionId: {}",
                         token != null, sessionId != null);
                 return new AuthTokenResult(false, "Authentication error");
@@ -49,6 +55,7 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             try {
                 userId = jwtService.extractUserId(token);
             } catch (JwtException e) {
+                metricStatus = "invalid_token";
                 return new AuthTokenResult(false, Map.of("message", "Invalid token"));
             }
 
@@ -57,6 +64,7 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
                     sessionService.validateSession(userId, sessionId);
 
             if (!validationResult.isValid()) {
+                metricStatus = "invalid_session";
                 log.error("Session validation failed: {}", validationResult.getMessage());
                 return new AuthTokenResult(false, Map.of("message", "Invalid session"));
             }
@@ -64,6 +72,7 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             // Load user from database
             User user = userRepository.findById(userId).orElse(null);
             if (user == null) {
+                metricStatus = "user_not_found";
                 log.error("User not found: {}", userId);
                 return new AuthTokenResult(false, Map.of("message", "User not found"));
             }
@@ -72,10 +81,13 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
             
             var socketUser = new SocketUser(user.getId(), user.getName(), sessionId, client.getSessionId().toString());
             socketIOChatHandlerProvider.getObject().onConnect(client, socketUser);
+            metricStatus = "success";
             return AuthTokenResult.AuthTokenResultSuccess;
         } catch (Exception e) {
             log.error("Socket.IO authentication error: {}", e.getMessage(), e);
             return new AuthTokenResult(false, Map.of("message", e.getMessage()));
+        } finally {
+            chatRoomMetrics.recordSocketAuth(timerSample, metricStatus);
         }
     }
 }

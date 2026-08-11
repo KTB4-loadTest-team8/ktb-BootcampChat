@@ -20,4 +20,5 @@ public class JoinRoomSuccessResponse {
     private List<MessageResponse> messages;
     private boolean hasMore;
     private List<ActiveStreamResponse> activeStreams;
+    private boolean initialMessagesPending;
 }

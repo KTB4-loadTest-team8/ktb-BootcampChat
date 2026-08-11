@@ -17,6 +17,7 @@ import com.ktb.chatapp.websocket.socketio.UserRooms;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
@@ -114,14 +115,7 @@ public class RoomLeaveHandler {
             return;
         }
         
-        var participantList = roomOpt.get()
-                .getParticipantIds()
-                .stream()
-                .map(userRepository::findById)
-                .filter(Optional::isPresent)
-                .map(Optional::get)
-                .map(UserResponse::from)
-                .toList();
+        var participantList = getParticipantResponses(roomOpt.get());
         
         if (participantList.isEmpty()) {
             return;
@@ -143,5 +137,21 @@ public class RoomLeaveHandler {
     private String getUserName(SocketIOClient client) {
         SocketUser user = getUserDto(client);
         return user != null ? user.name() : null;
+    }
+
+    private List<UserResponse> getParticipantResponses(Room room) {
+        if (room.getParticipantIds() == null || room.getParticipantIds().isEmpty()) {
+            return List.of();
+        }
+
+        Map<String, User> usersById = new HashMap<>();
+        userRepository.findAllById(room.getParticipantIds())
+                .forEach(user -> usersById.put(user.getId(), user));
+
+        return room.getParticipantIds().stream()
+                .map(usersById::get)
+                .filter(java.util.Objects::nonNull)
+                .map(UserResponse::from)
+                .toList();
     }
 }
