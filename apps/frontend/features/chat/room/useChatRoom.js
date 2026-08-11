@@ -182,6 +182,7 @@ export const useChatRoom = ({ roomId, onNavigate, onReplace, asPath }) => {
     error,
     loading,
     connected,
+    activeSocket,
     currentUser,
     filePreview,
     uploading,

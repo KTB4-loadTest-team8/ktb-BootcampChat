@@ -39,24 +39,31 @@ export const processLoadedRoomMessages = ({
   return nextMessages;
 };
 
-export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) =>
-  messages.map(msg => {
-    if (!messageIds.includes(msg._id)) {
-      return msg;
-    }
+export const applyReadReceipts = (messages, { userId, messageIds, timestamp }) => {
+  const messageIdSet = new Set(messageIds || []);
+  if (!userId || messageIdSet.size === 0) {
+    return messages;
+  }
+
+  let changed = false;
+  const nextMessages = messages.map(msg => {
+    if (!messageIdSet.has(msg._id)) return msg;
 
     const alreadyRead = msg.readers?.some(reader =>
       reader.userId === userId || reader._id === userId
     );
-    if (alreadyRead) {
-      return msg;
-    }
+    if (alreadyRead) return msg;
+
+    changed = true;
 
     return {
       ...msg,
       readers: [...(msg.readers || []), { userId, readAt: timestamp || new Date() }],
     };
   });
+
+  return changed ? nextMessages : messages;
+};
 
 export const createRoomEventHandlers = ({
   mountedRef,

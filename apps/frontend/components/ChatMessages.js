@@ -5,6 +5,7 @@ import FileMessage from './FileMessage';
 import UserMessage from './UserMessage';
 import { useInfiniteScroll } from '../hooks/useInfiniteScroll';
 import { useAutoScroll } from '../hooks/useAutoScroll';
+import { useReadReceiptBatching } from '../features/chat/room/useReadReceiptBatching';
 
 const NOOP = () => {};
 const MESSAGE_WRAPPER_STYLE = {
@@ -33,6 +34,7 @@ const MessageRow = React.memo(({
 
   return (
     <div
+      data-read-message-id={msg.type !== 'system' ? msg._id : undefined}
       style={MESSAGE_WRAPPER_STYLE}
     >
       <MessageComponent
@@ -82,6 +84,8 @@ const ChatMessages = ({
   onReactionAdd = NOOP,
   onReactionRemove = NOOP,
   onLoadMore = NOOP,
+  socket = null,
+  connected = false,
 }) => {
   // 무한 스크롤 훅
   const { sentinelRef } = useInfiniteScroll(
@@ -100,6 +104,14 @@ const ChatMessages = ({
   const currentUserId = currentUser?._id || currentUser?.id;
 
   const allMessages = Array.isArray(messages) ? messages : [];
+
+  useReadReceiptBatching({
+    containerRef,
+    messages: allMessages,
+    currentUserId,
+    socket,
+    connected,
+  });
 
   return (
     <VStack

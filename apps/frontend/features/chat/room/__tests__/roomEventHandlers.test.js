@@ -72,6 +72,18 @@ describe('roomEventHandlers', () => {
     ]);
   });
 
+  it('preserves the message array when a read receipt changes nothing', () => {
+    const messages = [{
+      _id: 'message-1',
+      readers: [{ userId: 'user-2', readAt: 'existing' }],
+    }];
+
+    expect(applyReadReceipts(messages, {
+      userId: 'user-2',
+      messageIds: ['message-1'],
+    })).toBe(messages);
+  });
+
   it('batches live messages and keeps the updater pure in StrictMode', () => {
     const mountedRef = { current: true };
     const processedMessageIds = { current: new Set() };
