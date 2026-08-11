@@ -168,11 +168,15 @@ public class RoomService {
             }
         }
 
-        // 이미 참여중인지 확인
-        if (!room.getParticipantIds().contains(user.getId())) {
-            // 채팅방 참여
-            room.getParticipantIds().add(user.getId());
-            room = roomRepository.save(room);
+        // 이미 참여중인 경우에는 불필요한 쓰기를 수행하지 않는다.
+        boolean alreadyParticipant = room.getParticipantIds() != null
+                && room.getParticipantIds().contains(user.getId());
+        if (!alreadyParticipant) {
+            // 전체 Room 문서를 저장하지 않고 원자적으로 참여자를 추가한다.
+            room = roomRepository.addParticipantAndReturn(roomId, user.getId()).orElse(null);
+            if (room == null) {
+                return null;
+            }
         }
         
         RoomResponse roomResponse = mapToRoomResponse(room, name);
