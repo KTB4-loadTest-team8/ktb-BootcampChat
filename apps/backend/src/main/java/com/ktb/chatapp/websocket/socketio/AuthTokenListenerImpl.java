@@ -4,11 +4,10 @@ import com.corundumstudio.socketio.AuthTokenListener;
 import com.corundumstudio.socketio.AuthTokenResult;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.ktb.chatapp.metrics.ChatRoomMetrics;
-import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.JwtService;
 import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
+import com.ktb.chatapp.service.SocketUserLookupService;
 import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
 import io.micrometer.core.instrument.Timer;
 import java.util.Map;
@@ -31,7 +30,7 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
 
     private final JwtService jwtService;
     private final SessionService sessionService;
-    private final UserRepository userRepository;
+    private final SocketUserLookupService socketUserLookupService;
     private final ObjectProvider<ConnectionLoginHandler> socketIOChatHandlerProvider;
     private final ChatRoomMetrics chatRoomMetrics;
 
@@ -69,17 +68,17 @@ public class AuthTokenListenerImpl implements AuthTokenListener {
                 return new AuthTokenResult(false, Map.of("message", "Invalid session"));
             }
 
-            // Load user from database
-            User user = userRepository.findById(userId).orElse(null);
+            // JWT 및 Redis 세션 검증 뒤, handshake에 필요한 사용자 정보만 짧게 캐시한다.
+            var user = socketUserLookupService.findById(userId);
             if (user == null) {
                 metricStatus = "user_not_found";
                 log.error("User not found: {}", userId);
                 return new AuthTokenResult(false, Map.of("message", "User not found"));
             }
 
-            log.info("Socket.IO connection authorized for user: {} ({})", user.getName(), userId);
+            log.info("Socket.IO connection authorized for user: {} ({})", user.name(), userId);
             
-            var socketUser = new SocketUser(user.getId(), user.getName(), sessionId, client.getSessionId().toString());
+            var socketUser = new SocketUser(user.id(), user.name(), sessionId, client.getSessionId().toString());
             socketIOChatHandlerProvider.getObject().onConnect(client, socketUser);
             metricStatus = "success";
             return AuthTokenResult.AuthTokenResultSuccess;

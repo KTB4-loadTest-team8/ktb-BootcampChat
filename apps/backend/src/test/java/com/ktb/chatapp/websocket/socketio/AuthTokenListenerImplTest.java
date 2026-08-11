@@ -2,15 +2,13 @@ package com.ktb.chatapp.websocket.socketio;
 
 import com.corundumstudio.socketio.SocketIOClient;
 import com.ktb.chatapp.metrics.ChatRoomMetrics;
-import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.service.JwtService;
 import com.ktb.chatapp.service.SessionService;
 import com.ktb.chatapp.service.SessionValidationResult;
+import com.ktb.chatapp.service.SocketUserLookupService;
 import com.ktb.chatapp.websocket.socketio.handler.ConnectionLoginHandler;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +27,7 @@ class AuthTokenListenerImplTest {
 
     @Mock private JwtService jwtService;
     @Mock private SessionService sessionService;
-    @Mock private UserRepository userRepository;
+    @Mock private SocketUserLookupService socketUserLookupService;
     @Mock private ObjectProvider<ConnectionLoginHandler> handlerProvider;
     @Mock private ConnectionLoginHandler connectionLoginHandler;
     @Mock private SocketIOClient client;
@@ -43,21 +41,18 @@ class AuthTokenListenerImplTest {
         listener = new AuthTokenListenerImpl(
                 jwtService,
                 sessionService,
-                userRepository,
+                socketUserLookupService,
                 handlerProvider,
                 new ChatRoomMetrics(meterRegistry));
     }
 
     @Test
     void getAuthTokenResult_recordsSuccessfulSocketAuthentication() {
-        User user = User.builder()
-                .id("user-1")
-                .name("tester")
-                .build();
         when(jwtService.extractUserId("token-1")).thenReturn("user-1");
         when(sessionService.validateSession("user-1", "session-1"))
                 .thenReturn(SessionValidationResult.valid(null));
-        when(userRepository.findById("user-1")).thenReturn(Optional.of(user));
+        when(socketUserLookupService.findById("user-1"))
+                .thenReturn(new SocketUserLookupService.SocketUserIdentity("user-1", "tester"));
         when(client.getSessionId()).thenReturn(UUID.randomUUID());
         when(handlerProvider.getObject()).thenReturn(connectionLoginHandler);
 

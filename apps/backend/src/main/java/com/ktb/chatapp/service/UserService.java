@@ -26,6 +26,7 @@ public class UserService {
     private final UserRepository userRepository;
     private final FileService fileService;
     private final StoragePort storagePort;
+    private final SocketUserLookupService socketUserLookupService;
 
     @Value("${app.profile.image.max-size:5242880}") // 5MB
     private long maxProfileImageSize;
@@ -57,6 +58,7 @@ public class UserService {
         user.setUpdatedAt(LocalDateTime.now());
 
         User updatedUser = userRepository.save(user);
+        socketUserLookupService.evict(updatedUser.getId());
         log.info("사용자 프로필 업데이트 완료 - ID: {}, Name: {}", user.getId(), request.getName());
 
         return UserResponse.from(updatedUser);
@@ -177,6 +179,7 @@ public class UserService {
         }
 
         userRepository.delete(user);
+        socketUserLookupService.evict(user.getId());
         log.info("회원 탈퇴 완료 - User ID: {}", user.getId());
     }
 }
