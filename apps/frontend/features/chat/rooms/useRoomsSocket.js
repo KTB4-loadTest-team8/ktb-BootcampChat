@@ -74,6 +74,18 @@ export const useRoomsSocket = ({
         Object.entries(handlers).forEach(([event, handler]) => {
           socket.on(event, handler);
         });
+
+        setConnectionStatus(
+          socket.connected
+            ? CONNECTION_STATUS.CONNECTED
+            : CONNECTION_STATUS.DISCONNECTED
+        );
+
+        return () => {
+          Object.entries(handlers).forEach(([event, handler]) => {
+            socket.off(event, handler);
+          });
+        };
       } catch (error) {
         if (!isSubscribed) return;
 
@@ -88,14 +100,19 @@ export const useRoomsSocket = ({
       }
     };
 
-    connectSocket();
+    let unsubscribe = null;
+    connectSocket().then((cleanup) => {
+      if (!isSubscribed) {
+        cleanup?.();
+        return;
+      }
+      unsubscribe = cleanup;
+    });
 
     return () => {
       isSubscribed = false;
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
+      unsubscribe?.();
+      socketRef.current = null;
     };
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
