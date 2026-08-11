@@ -38,7 +38,13 @@ public class RoomResponse {
     private LocalDateTime createdAtDateTime;
 
     @Schema(description = "현재 사용자가 생성자인지 여부", example = "true")
-    private boolean isCreator;
+    @JsonProperty("isCreator")
+    @Builder.Default
+    private Boolean isCreator = Boolean.FALSE;
+
+    public void setIsCreator(Boolean value) {
+        this.isCreator = Boolean.TRUE.equals(value);
+    }
 
     @Schema(description = "최근 30분간 메시지 수", example = "23")
     private Integer recentMessageCount;
