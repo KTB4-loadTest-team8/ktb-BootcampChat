@@ -53,4 +53,22 @@ public class MessageReadStatusAsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "chatRoomPostJoinTaskExecutor")
+    public Executor chatRoomPostJoinTaskExecutor(
+            @Value("${chat.room-join-post-process.executor.core-pool-size:1}") int corePoolSize,
+            @Value("${chat.room-join-post-process.executor.max-pool-size:2}") int maxPoolSize,
+            @Value("${chat.room-join-post-process.executor.queue-capacity:100}") int queueCapacity
+    ) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(corePoolSize);
+        executor.setMaxPoolSize(maxPoolSize);
+        executor.setQueueCapacity(queueCapacity);
+        executor.setThreadNamePrefix("chat-room-post-join-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.setWaitForTasksToCompleteOnShutdown(true);
+        executor.setAwaitTerminationSeconds(10);
+        executor.initialize();
+        return executor;
+    }
 }

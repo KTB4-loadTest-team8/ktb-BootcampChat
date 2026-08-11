@@ -1,22 +1,15 @@
 package com.ktb.chatapp.websocket.socketio.handler;
 
-import com.corundumstudio.socketio.BroadcastOperations;
 import com.corundumstudio.socketio.SocketIOClient;
-import com.corundumstudio.socketio.SocketIOServer;
 import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
-import com.ktb.chatapp.dto.MessageResponse;
 import com.ktb.chatapp.metrics.ChatRoomMetrics;
-import com.ktb.chatapp.model.Message;
-import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -30,8 +23,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.JOIN_ROOM_ERROR;
 import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.JOIN_ROOM_SUCCESS;
-import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.MESSAGE;
-import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.PARTICIPANTS_UPDATE;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.inOrder;
@@ -43,16 +34,11 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 class RoomJoinHandlerTest {
 
-    @Mock private SocketIOServer socketIOServer;
-    @Mock private MessageRepository messageRepository;
     @Mock private RoomRepository roomRepository;
     @Mock private UserRepository userRepository;
     @Mock private UserRooms userRooms;
-    @Mock private InitialMessageLoadService initialMessageLoadService;
-    @Mock private MessageResponseMapper messageResponseMapper;
-    @Mock private RoomLeaveHandler roomLeaveHandler;
+    @Mock private RoomJoinPostProcessService roomJoinPostProcessService;
     @Mock private SocketIOClient client;
-    @Mock private BroadcastOperations roomOperations;
 
     private RoomJoinHandler handler;
     private SimpleMeterRegistry meterRegistry;
@@ -61,14 +47,10 @@ class RoomJoinHandlerTest {
     void setUp() {
         meterRegistry = new SimpleMeterRegistry();
         handler = new RoomJoinHandler(
-                socketIOServer,
-                messageRepository,
                 roomRepository,
                 userRepository,
                 userRooms,
-                initialMessageLoadService,
-                messageResponseMapper,
-                roomLeaveHandler,
+                roomJoinPostProcessService,
                 new ChatRoomMetrics(meterRegistry));
     }
 
@@ -87,34 +69,17 @@ class RoomJoinHandlerTest {
     }
 
     @Test
-    void handleJoinRoom_sendsSuccessBeforeStartingInitialMessageLoad() {
+    void handleJoinRoom_sendsSuccessBeforeSchedulingPostJoinProcessing() {
         SocketUser socketUser = new SocketUser("user-1", "tester", "session-1", "socket-1");
         User user = User.builder().id("user-1").name("tester").email("tester@example.com").build();
         User participant = User.builder().id("user-2").name("participant").email("participant@example.com").build();
         Room room = Room.builder().id("room-1").name("room").participantIds(Set.of("user-1", "user-2")).build();
-        MessageResponse joinMessageResponse = MessageResponse.builder()
-                .id("message-1")
-                .roomId("room-1")
-                .content("tester님이 입장하였습니다.")
-                .type(MessageType.system)
-                .timestamp(1L)
-                .build();
         when(client.get("user")).thenReturn(socketUser);
         when(userRepository.findAllById(Set.of("user-1", "user-2"))).thenReturn(List.of(user, participant));
         when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
         when(roomRepository.addParticipantAndReturn("room-1", "user-1"))
                 .thenReturn(Optional.of(room));
         when(userRooms.isInRoom("user-1", "room-1")).thenReturn(false);
-        when(messageRepository.save(any(Message.class))).thenAnswer(invocation -> {
-            Message message = invocation.getArgument(0);
-            message.setId("message-1");
-            message.setTimestamp(LocalDateTime.now());
-            return message;
-        });
-        when(messageResponseMapper.mapToMessageResponse(any(Message.class), eq(null)))
-                .thenReturn(joinMessageResponse);
-        when(socketIOServer.getRoomOperations("room-1")).thenReturn(roomOperations);
-
         handler.handleJoinRoom(client, "room-1");
 
         verify(roomRepository).addParticipantAndReturn("room-1", "user-1");
@@ -129,12 +94,10 @@ class RoomJoinHandlerTest {
         org.assertj.core.api.Assertions.assertThat(response.isHasMore()).isFalse();
         org.assertj.core.api.Assertions.assertThat(response.isInitialMessagesPending()).isTrue();
 
-        InOrder joinResponseThenInitialLoad = inOrder(client, initialMessageLoadService);
-        joinResponseThenInitialLoad.verify(client).sendEvent(eq(JOIN_ROOM_SUCCESS), any());
-        joinResponseThenInitialLoad.verify(initialMessageLoadService)
-                .loadAndSend(client, "room-1", "user-1");
-        verify(roomOperations).sendEvent(MESSAGE, joinMessageResponse);
-        verify(roomOperations).sendEvent(eq(PARTICIPANTS_UPDATE), any());
+        InOrder joinResponseThenPostProcess = inOrder(client, roomJoinPostProcessService);
+        joinResponseThenPostProcess.verify(client).sendEvent(eq(JOIN_ROOM_SUCCESS), any());
+        joinResponseThenPostProcess.verify(roomJoinPostProcessService)
+                .processAfterJoin(eq(client), eq("room-1"), eq("user-1"), eq("tester"), any());
         verify(userRepository).findAllById(Set.of("user-1", "user-2"));
         verify(userRepository, never()).findById("user-1");
         verify(userRepository, never()).findById("user-2");

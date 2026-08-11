@@ -1,22 +1,17 @@
 package com.ktb.chatapp.websocket.socketio.handler;
 
 import com.corundumstudio.socketio.SocketIOClient;
-import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
 import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.metrics.ChatRoomMetrics;
-import com.ktb.chatapp.model.Message;
-import com.ktb.chatapp.model.MessageType;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
-import com.ktb.chatapp.repository.MessageRepository;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import io.micrometer.core.instrument.Timer;
-import java.time.LocalDateTime;
 import java.util.*;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,14 +30,10 @@ import static com.ktb.chatapp.websocket.socketio.SocketIOEvents.*;
 @RequiredArgsConstructor
 public class RoomJoinHandler {
 
-    private final SocketIOServer socketIOServer;
-    private final MessageRepository messageRepository;
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
-    private final InitialMessageLoadService initialMessageLoadService;
-    private final MessageResponseMapper messageResponseMapper;
-    private final RoomLeaveHandler roomLeaveHandler;
+    private final RoomJoinPostProcessService roomJoinPostProcessService;
     private final ChatRoomMetrics chatRoomMetrics;
     
     @OnEvent(JOIN_ROOM)
@@ -89,19 +80,6 @@ public class RoomJoinHandler {
             client.joinRoom(roomId);
             userRooms.add(userId, roomId);
 
-            Message joinMessage = Message.builder()
-                .roomId(roomId)
-                .content(userName + "님이 입장하였습니다.")
-                .type(MessageType.system)
-                .timestamp(LocalDateTime.now())
-                .mentions(new ArrayList<>())
-                .reactions(new HashMap<>())
-                .readers(new ArrayList<>())
-                .metadata(new HashMap<>())
-                .build();
-
-            joinMessage = messageRepository.save(joinMessage);
-
             List<UserResponse> participants = getParticipantResponses(room);
             
             JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
@@ -115,16 +93,8 @@ public class RoomJoinHandler {
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);
 
-            // 초기 메시지 조회는 입장 성공 응답 이후 bounded executor에서 처리한다.
-            initialMessageLoadService.loadAndSend(client, roomId, userId);
-
-            // 입장 메시지 브로드캐스트
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(MESSAGE, messageResponseMapper.mapToMessageResponse(joinMessage, null));
-
-            // 참가자 목록 업데이트 브로드캐스트
-            socketIOServer.getRoomOperations(roomId)
-                .sendEvent(PARTICIPANTS_UPDATE, participants);
+            // ACK 이후 부수 작업에서 시스템 메시지를 저장·브로드캐스트한 뒤 초기 메시지를 조회한다.
+            roomJoinPostProcessService.processAfterJoin(client, roomId, userId, userName, participants);
 
             log.info("User {} joined room {} successfully. Initial messages loading asynchronously",
                 userName, roomId);
