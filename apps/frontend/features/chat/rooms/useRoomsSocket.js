@@ -10,7 +10,9 @@ const CONNECTION_STATUS = {
 export const useRoomsSocket = ({
   currentUser,
   setConnectionStatus,
-  setRooms,
+  prependRoom,
+  replaceRoom,
+  mergeRoomActivity,
 }) => {
   const socketRef = useRef(null);
 
@@ -48,26 +50,15 @@ export const useRoomsSocket = ({
             setConnectionStatus(CONNECTION_STATUS.ERROR);
           },
           roomCreated: (newRoom) => {
-            setRooms((prev) => [newRoom, ...prev]);
+            prependRoom(newRoom);
           },
           roomUpdated: (updatedRoom) => {
-            setRooms((prev) =>
-              prev.map((room) =>
-                room._id === updatedRoom._id ? updatedRoom : room
-              )
-            );
+            replaceRoom(updatedRoom);
           },
           // 활성도 지표만 담긴 경량 payload이므로 방 정보를 덮지 않고 병합한다
           roomActivity: (activity) => {
             if (!activity?._id) return;
-
-            setRooms((prev) =>
-              prev.map((room) =>
-                room._id === activity._id
-                  ? { ...room, recentMessageCount: activity.recentMessageCount }
-                  : room
-              )
-            );
+            mergeRoomActivity(activity);
           },
         };
 

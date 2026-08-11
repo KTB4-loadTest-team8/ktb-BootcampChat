@@ -22,7 +22,9 @@ const renderRoomsSocket = (socket, overrides = {}) => {
       currentUser,
       router: { push: vi.fn() },
       setConnectionStatus: vi.fn(),
-      setRooms: vi.fn(),
+      prependRoom: vi.fn(),
+      replaceRoom: vi.fn(),
+      mergeRoomActivity: vi.fn(),
       ...overrides,
     })
   );
@@ -74,9 +76,9 @@ describe('useRoomsSocket', () => {
 
   it('merges a roomActivity update into the matching room without dropping its other fields', async () => {
     const socket = createSocket();
-    const setRooms = vi.fn();
+    const mergeRoomActivity = vi.fn();
 
-    renderRoomsSocket(socket, { setRooms });
+    renderRoomsSocket(socket, { mergeRoomActivity });
 
     await waitFor(() => {
       expect(socket.on).toHaveBeenCalledWith('roomActivity', expect.any(Function));
@@ -84,24 +86,17 @@ describe('useRoomsSocket', () => {
 
     handlerFor(socket, 'roomActivity')({ _id: 'room-2', recentMessageCount: 9 });
 
-    const updateRooms = setRooms.mock.calls[0][0];
-
-    expect(
-      updateRooms([
-        { _id: 'room-1', name: '방1', recentMessageCount: 1 },
-        { _id: 'room-2', name: '방2', recentMessageCount: 2 },
-      ])
-    ).toEqual([
-      { _id: 'room-1', name: '방1', recentMessageCount: 1 },
-      { _id: 'room-2', name: '방2', recentMessageCount: 9 },
-    ]);
+    expect(mergeRoomActivity).toHaveBeenCalledWith({
+      _id: 'room-2',
+      recentMessageCount: 9,
+    });
   });
 
   it('ignores a roomActivity payload without a room id', async () => {
     const socket = createSocket();
-    const setRooms = vi.fn();
+    const mergeRoomActivity = vi.fn();
 
-    renderRoomsSocket(socket, { setRooms });
+    renderRoomsSocket(socket, { mergeRoomActivity });
 
     await waitFor(() => {
       expect(socket.on).toHaveBeenCalledWith('roomActivity', expect.any(Function));
@@ -109,7 +104,27 @@ describe('useRoomsSocket', () => {
 
     handlerFor(socket, 'roomActivity')(undefined);
 
-    expect(setRooms).not.toHaveBeenCalled();
+    expect(mergeRoomActivity).not.toHaveBeenCalled();
+  });
+
+  it('routes create and update events to id-based mutations', async () => {
+    const socket = createSocket();
+    const prependRoom = vi.fn();
+    const replaceRoom = vi.fn();
+
+    renderRoomsSocket(socket, { prependRoom, replaceRoom });
+
+    await waitFor(() => {
+      expect(socket.on).toHaveBeenCalledWith('roomCreated', expect.any(Function));
+    });
+
+    const createdRoom = { _id: 'room-new', name: '새 방' };
+    const updatedRoom = { _id: 'room-1', name: '수정된 방' };
+    handlerFor(socket, 'roomCreated')(createdRoom);
+    handlerFor(socket, 'roomUpdated')(updatedRoom);
+
+    expect(prependRoom).toHaveBeenCalledWith(createdRoom);
+    expect(replaceRoom).toHaveBeenCalledWith(updatedRoom);
   });
 
   it('unsubscribes screen listeners without disconnecting the session socket', async () => {

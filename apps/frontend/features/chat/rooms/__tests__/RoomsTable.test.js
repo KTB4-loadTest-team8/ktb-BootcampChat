@@ -12,12 +12,21 @@ const createRooms = (count) => Array.from({ length: count }, (_, index) => ({
   createdAt: new Date(2026, 0, 1, 0, index % 60).toISOString(),
 }));
 
+const createRoomIndex = (count) => {
+  const rooms = createRooms(count);
+  return {
+    roomOrder: rooms.map((room) => room._id),
+    roomsById: new Map(rooms.map((room) => [room._id, room])),
+  };
+};
+
 describe('RoomsTable', () => {
   it('renders the first room immediately without mounting every room', () => {
     const onJoinRoom = vi.fn();
     render(
       <RoomsTable
-        rooms={createRooms(1000)}
+        {...createRoomIndex(1000)}
+        roomsRevision={0}
         connectionStatus={CONNECTION_STATUS.CONNECTED}
         onJoinRoom={onJoinRoom}
       />
@@ -35,7 +44,8 @@ describe('RoomsTable', () => {
   it('moves the rendered window when the list scrolls', () => {
     const { container } = render(
       <RoomsTable
-        rooms={createRooms(1000)}
+        {...createRoomIndex(1000)}
+        roomsRevision={0}
         connectionStatus={CONNECTION_STATUS.CONNECTED}
         onJoinRoom={vi.fn()}
       />
@@ -57,7 +67,8 @@ describe('RoomsTable', () => {
     const onJoinRoom = vi.fn();
     const { container, rerender } = render(
       <RoomsTable
-        rooms={createRooms(1000)}
+        {...createRoomIndex(1000)}
+        roomsRevision={0}
         connectionStatus={CONNECTION_STATUS.CONNECTED}
         onJoinRoom={onJoinRoom}
       />
@@ -72,7 +83,8 @@ describe('RoomsTable', () => {
 
     rerender(
       <RoomsTable
-        rooms={createRooms(5)}
+        {...createRoomIndex(5)}
+        roomsRevision={1}
         connectionStatus={CONNECTION_STATUS.CONNECTED}
         onJoinRoom={onJoinRoom}
       />

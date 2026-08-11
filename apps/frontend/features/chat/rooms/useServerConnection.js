@@ -18,8 +18,8 @@ export const RETRY_CONFIG = {
   reconnectInterval: 30000,
 };
 
-export const useServerConnection = () => {
-  const [connectionStatus, setConnectionStatus] = useState(CONNECTION_STATUS.CHECKING);
+export const useServerConnection = (initialStatus = CONNECTION_STATUS.CHECKING) => {
+  const [connectionStatus, setConnectionStatus] = useState(initialStatus);
   const [retryCount, setRetryCount] = useState(0);
   const [isRetrying, setIsRetrying] = useState(false);
 

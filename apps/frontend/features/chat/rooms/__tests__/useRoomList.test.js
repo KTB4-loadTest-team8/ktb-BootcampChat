@@ -39,6 +39,19 @@ describe('useRoomList', () => {
     vi.clearAllMocks();
   });
 
+  it('hydrates the room store from server data without entering a loading state', () => {
+    const initialRooms = [
+      { _id: 'room-1', name: '서버 렌더링 방' },
+      { _id: 'room-2', name: '두 번째 방' },
+    ];
+    const { result } = renderRoomList({ initialRooms, hasInitialRooms: true });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.roomOrder).toEqual(['room-1', 'room-2']);
+    expect(result.current.roomsById.get('room-1')).toEqual(initialRooms[0]);
+    expect(axiosInstance.get).not.toHaveBeenCalled();
+  });
+
   it('starts loading rooms immediately but waits for the health check before exposing them', async () => {
     let resolveHealth;
     const attemptConnection = vi.fn(
@@ -57,14 +70,15 @@ describe('useRoomList', () => {
 
     expect(axiosInstance.get).toHaveBeenCalledWith('/api/rooms');
     expect(attemptConnection).toHaveBeenCalledTimes(1);
-    expect(result.current.rooms).toEqual([]);
+    expect(result.current.roomOrder).toEqual([]);
 
     await act(async () => {
       resolveHealth(true);
       await fetchPromise;
     });
 
-    expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+    expect(result.current.roomOrder).toEqual(['room-1']);
+    expect(result.current.roomsById.get('room-1')).toEqual({ _id: 'room-1' });
   });
 
   it('replaces the list on refresh without leaving the refreshing flag on', async () => {
@@ -76,7 +90,8 @@ describe('useRoomList', () => {
       await result.current.refreshRooms();
     });
 
-    expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+    expect(result.current.roomOrder).toEqual(['room-1']);
+    expect(result.current.roomsById.get('room-1')).toEqual({ _id: 'room-1' });
     expect(result.current.refreshing).toBe(false);
   });
 
@@ -95,7 +110,8 @@ describe('useRoomList', () => {
       await result.current.refreshRooms({ silent: true });
     });
 
-    expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+    expect(result.current.roomOrder).toEqual(['room-1']);
+    expect(result.current.roomsById.get('room-1')).toEqual({ _id: 'room-1' });
     expect(result.current.error).toBeNull();
     expect(result.current.loading).toBe(false);
   });
@@ -133,6 +149,35 @@ describe('useRoomList', () => {
     });
 
     expect(result.current.error).toBeNull();
-    expect(result.current.rooms).toEqual([{ _id: 'room-1' }]);
+    expect(result.current.roomOrder).toEqual(['room-1']);
+    expect(result.current.roomsById.get('room-1')).toEqual({ _id: 'room-1' });
+  });
+
+  it('updates room events by id without rebuilding the room order', async () => {
+    axiosInstance.get.mockResolvedValue(roomsResponse([
+      { _id: 'room-1', name: '방1', recentMessageCount: 1 },
+      { _id: 'room-2', name: '방2', recentMessageCount: 2 },
+    ]));
+
+    const { result } = renderRoomList();
+
+    await act(async () => {
+      await result.current.fetchRooms();
+    });
+
+    const initialOrder = result.current.roomOrder;
+    const untouchedRoom = result.current.roomsById.get('room-1');
+
+    act(() => {
+      result.current.mergeRoomActivity({ _id: 'room-2', recentMessageCount: 9 });
+    });
+
+    expect(result.current.roomOrder).toBe(initialOrder);
+    expect(result.current.roomsById.get('room-1')).toBe(untouchedRoom);
+    expect(result.current.roomsById.get('room-2')).toEqual({
+      _id: 'room-2',
+      name: '방2',
+      recentMessageCount: 9,
+    });
   });
 });

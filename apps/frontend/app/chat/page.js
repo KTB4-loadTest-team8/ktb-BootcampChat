@@ -1,45 +1,63 @@
-'use client';
-
-import { useEffect } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
+import { Suspense } from 'react';
+import { cookies } from 'next/headers';
+import { redirect } from 'next/navigation';
 import ChatHeader from '@/components/ChatHeader';
-import { useAuth } from '@/contexts/AuthContext';
-import ChatRoomsView from '@/features/chat/rooms/ChatRoomsView';
+import ChatRoomsClient from './ChatRoomsClient';
+import { getBffSession } from '@/lib/server/bffAuth';
+import { loadInitialChatData } from '@/lib/server/chatBootstrap';
 
-const LoadingState = () => (
-  <div
+const RoomsFallback = () => (
+  <main
     style={{
+      minHeight: 'calc(100vh - 72px)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      height: '100vh',
-      backgroundColor: 'var(--vapor-color-background)',
-      color: 'var(--vapor-color-text-primary)',
     }}
   >
-    <div>Loading...</div>
-  </div>
+    <p>채팅방 목록을 불러오는 중...</p>
+  </main>
 );
 
-export default function ChatPage() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const { isAuthenticated, isLoading } = useAuth();
+async function RoomsStream({ session }) {
+  let initialData;
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.replace(`/?redirect=${pathname}`);
-    }
-  }, [isAuthenticated, isLoading, pathname, router]);
+  try {
+    initialData = await loadInitialChatData(session);
+  } catch {
+    return (
+      <ChatRoomsClient
+        initialRooms={[]}
+        initialConnectionStatus="checking"
+      />
+    );
+  }
 
-  if (isLoading || !isAuthenticated) {
-    return <LoadingState />;
+  if (!initialData.authenticated) {
+    redirect('/?redirect=/chat');
+  }
+
+  return (
+    <ChatRoomsClient
+      initialRooms={initialData.rooms}
+      initialConnectionStatus={initialData.connected ? 'connected' : 'checking'}
+    />
+  );
+}
+
+export default async function ChatPage() {
+  const session = getBffSession(await cookies());
+
+  if (!session) {
+    redirect('/?redirect=/chat');
   }
 
   return (
     <>
       <ChatHeader />
-      <ChatRoomsView router={router} />
+      <Suspense fallback={<RoomsFallback />}>
+        <RoomsStream session={session} />
+      </Suspense>
     </>
   );
 }

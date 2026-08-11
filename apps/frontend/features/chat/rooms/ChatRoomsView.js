@@ -28,7 +28,12 @@ const LoadingIndicator = ({ text }) => (
   </HStack>
 );
 
-export default function ChatRoomsView({ router }) {
+export default function ChatRoomsView({
+  router,
+  initialRooms = [],
+  hasInitialRooms = false,
+  initialConnectionStatus = CONNECTION_STATUS.CHECKING,
+}) {
   const { user: currentUser } = useAuth();
   const currentUserKey = currentUser?.id || currentUser?._id || currentUser?.email || currentUser?.token;
 
@@ -37,11 +42,15 @@ export default function ChatRoomsView({ router }) {
     setConnectionStatus,
     isRetrying,
     attemptConnection,
-  } = useServerConnection();
+  } = useServerConnection(initialConnectionStatus);
 
   const {
-    rooms,
-    setRooms,
+    roomOrder,
+    roomsById,
+    roomsRevision,
+    prependRoom,
+    replaceRoom,
+    mergeRoomActivity,
     error,
     loading,
     refreshing,
@@ -50,6 +59,8 @@ export default function ChatRoomsView({ router }) {
     refreshRooms,
     handleJoinRoom,
   } = useRoomList({
+    initialRooms,
+    hasInitialRooms,
     currentUser,
     router,
     connectionStatus,
@@ -81,11 +92,20 @@ export default function ChatRoomsView({ router }) {
 
     const initFetch = async () => {
       try {
-        await fetchRooms();
+        if (hasInitialRooms) {
+          // SSR 결과가 있어도 기존 /api/health 관찰 흐름은 유지한다.
+          await attemptConnection();
+        } else {
+          await fetchRooms();
+        }
       } catch (error) {
         retryTimer = setTimeout(() => {
           if (!cancelled) {
-            fetchRooms();
+            if (hasInitialRooms) {
+              attemptConnection();
+            } else {
+              fetchRooms();
+            }
           }
         }, 3000);
       }
@@ -99,7 +119,7 @@ export default function ChatRoomsView({ router }) {
         clearTimeout(retryTimer);
       }
     };
-  }, [currentUserKey, fetchRooms]);
+  }, [currentUserKey, fetchRooms, hasInitialRooms, attemptConnection]);
 
   useEffect(() => {
     if (!currentUserKey || connectionStatus !== CONNECTION_STATUS.CHECKING) return;
@@ -134,7 +154,13 @@ export default function ChatRoomsView({ router }) {
     };
   }, [currentUserKey, connectionStatus]);
 
-  useRoomsSocket({ currentUser, setConnectionStatus, setRooms });
+  useRoomsSocket({
+    currentUser,
+    setConnectionStatus,
+    prependRoom,
+    replaceRoom,
+    mergeRoomActivity,
+  });
 
   return (
     <Box
@@ -232,9 +258,11 @@ export default function ChatRoomsView({ router }) {
             <Box $css={{ padding: '$400' }}>
               <LoadingIndicator text="채팅방 목록을 불러오는 중..." />
             </Box>
-          ) : rooms.length > 0 ? (
+          ) : roomOrder.length > 0 ? (
             <RoomsTable
-              rooms={rooms}
+              roomOrder={roomOrder}
+              roomsById={roomsById}
+              roomsRevision={roomsRevision}
               connectionStatus={connectionStatus}
               onJoinRoom={handleJoinRoom}
             />
