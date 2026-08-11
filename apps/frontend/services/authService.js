@@ -40,7 +40,7 @@ class AuthService {
    */
   async login(credentials) {
     try {
-      const response = await axios.post('/api/bff/auth/login', credentials, {
+      const response = await axios.post('/bff/auth/login', credentials, {
         withCredentials: true,
       });
 
@@ -84,7 +84,7 @@ class AuthService {
    */
   async logout(token, sessionId) {
     try {
-      await axios.post('/api/bff/auth/logout', {}, {
+      await axios.post('/bff/auth/logout', {}, {
         withCredentials: true,
         headers: getAuthHeaders({ token, sessionId }),
       });
@@ -94,7 +94,7 @@ class AuthService {
   }
 
   async refreshToken(token, sessionId) {
-    const response = await axios.post('/api/bff/auth/refresh-token', {}, {
+    const response = await axios.post('/bff/auth/refresh-token', {}, {
       withCredentials: true,
       headers: getAuthHeaders({ token, sessionId }),
     });

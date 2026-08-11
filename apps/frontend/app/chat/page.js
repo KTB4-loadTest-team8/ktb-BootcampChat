@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import ChatHeader from '@/components/ChatHeader';
 import ChatRoomsClient from './ChatRoomsClient';
+import LegacySessionBridge from './LegacySessionBridge';
 import { getBffSession } from '@/lib/server/bffAuth';
 import { loadInitialChatData } from '@/lib/server/chatBootstrap';
 
@@ -49,7 +50,8 @@ export default async function ChatPage() {
   const session = getBffSession(await cookies());
 
   if (!session) {
-    redirect('/?redirect=/chat');
+    // 배포 전에 로그인한 localStorage 세션을 검증해 HttpOnly 쿠키로 한 번 승격한다.
+    return <LegacySessionBridge />;
   }
 
   return (
