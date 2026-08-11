@@ -217,17 +217,13 @@ export const AuthProviderWithRouter = ({ children, router }) => {
         throw new Error('인증 정보가 없습니다.');
       }
 
-      const response = await api.post('/api/auth/refresh-token', {}, {
-        handleAuthError: false,
-        headers: getAuthHeaders(user),
-      });
-
-      const data = response.data;
+      const data = await authService.refreshToken(user.token, user.sessionId);
 
       if (data.success && data.token) {
         const updatedUser = {
           ...user,
           token: data.token,
+          sessionId: data.sessionId || user.sessionId,
           lastActivity: Date.now()
         };
         saveUser(updatedUser);

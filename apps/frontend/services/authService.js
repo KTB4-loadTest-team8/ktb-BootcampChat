@@ -40,9 +40,8 @@ class AuthService {
    */
   async login(credentials) {
     try {
-      const response = await api.post('/api/auth/login', credentials, {
-        skipAuth: true,
-        handleAuthError: false,
+      const response = await axios.post('/api/bff/auth/login', credentials, {
+        withCredentials: true,
       });
 
       if (response.data?.success && response.data?.token) {
@@ -85,14 +84,22 @@ class AuthService {
    */
   async logout(token, sessionId) {
     try {
-      if (token) {
-        await api.post('/api/auth/logout', null, {
-          headers: getAuthHeaders({ token, sessionId })
-        });
-      }
+      await axios.post('/api/bff/auth/logout', {}, {
+        withCredentials: true,
+        headers: getAuthHeaders({ token, sessionId }),
+      });
     } catch (error) {
       // 로그아웃 API 실패해도 계속 진행 (best effort)
     }
+  }
+
+  async refreshToken(token, sessionId) {
+    const response = await axios.post('/api/bff/auth/refresh-token', {}, {
+      withCredentials: true,
+      headers: getAuthHeaders({ token, sessionId }),
+    });
+
+    return response.data;
   }
 
   /**

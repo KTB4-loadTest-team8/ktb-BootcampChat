@@ -39,6 +39,19 @@ describe('useRoomList', () => {
     vi.clearAllMocks();
   });
 
+  it('hydrates the room store from server data without entering a loading state', () => {
+    const initialRooms = [
+      { _id: 'room-1', name: '서버 렌더링 방' },
+      { _id: 'room-2', name: '두 번째 방' },
+    ];
+    const { result } = renderRoomList({ initialRooms, hasInitialRooms: true });
+
+    expect(result.current.loading).toBe(false);
+    expect(result.current.roomOrder).toEqual(['room-1', 'room-2']);
+    expect(result.current.roomsById.get('room-1')).toEqual(initialRooms[0]);
+    expect(axiosInstance.get).not.toHaveBeenCalled();
+  });
+
   it('starts loading rooms immediately but waits for the health check before exposing them', async () => {
     let resolveHealth;
     const attemptConnection = vi.fn(

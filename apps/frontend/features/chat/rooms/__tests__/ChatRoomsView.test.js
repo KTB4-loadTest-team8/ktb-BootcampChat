@@ -89,6 +89,22 @@ describe('ChatRoomsView', () => {
     expect(mocks.fetchRooms).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the health contract but skips the duplicate rooms request after SSR', async () => {
+    render(
+      <ChatRoomsView
+        router={{ push: vi.fn() }}
+        initialRooms={[{ _id: 'room-1', name: 'SSR 방' }]}
+        hasInitialRooms
+        initialConnectionStatus={CONNECTION_STATUS.CONNECTED}
+      />
+    );
+
+    await waitFor(() => {
+      expect(mocks.attemptConnection).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.fetchRooms).not.toHaveBeenCalled();
+  });
+
   it('refreshes the room list on an interval while connected', async () => {
     mocks.connectionStatus = CONNECTION_STATUS.CONNECTED;
     vi.useFakeTimers();

@@ -3,6 +3,8 @@ import axiosInstance from '@/services/axios';
 import { CONNECTION_STATUS } from './useServerConnection';
 
 export const useRoomList = ({
+  initialRooms = [],
+  hasInitialRooms = false,
   currentUser,
   router,
   connectionStatus,
@@ -10,15 +12,23 @@ export const useRoomList = ({
   isRetrying,
   attemptConnection,
 }) => {
-  const [roomOrder, setRoomOrder] = useState([]);
+  const [roomOrder, setRoomOrder] = useState(() => (
+    hasInitialRooms
+      ? initialRooms.filter((room) => room?._id).map((room) => room._id)
+      : []
+  ));
   // 이벤트마다 Map 전체를 복제하면 다시 O(n)이 되므로 저장소는 ref로 유지하고,
   // revision만 올려 React에 변경을 알린다. 각 방 객체의 참조는 변경된 ID만 교체된다.
-  const roomsByIdRef = useRef(new Map());
+  const roomsByIdRef = useRef(new Map(
+    hasInitialRooms
+      ? initialRooms.filter((room) => room?._id).map((room) => [room._id, room])
+      : []
+  ));
   const [roomsRevision, setRoomsRevision] = useState(0);
   const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!hasInitialRooms);
   const [refreshing, setRefreshing] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(!hasInitialRooms);
   const [joiningRoom, setJoiningRoom] = useState(false);
 
   const isLoadingRef = useRef(false);
