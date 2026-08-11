@@ -21,7 +21,8 @@ const FileMessage = ({
   currentUser = null,
   onReactionAdd,
   onReactionRemove,
-  room = null
+  room = null,
+  isLatestFile = false,
 }) => {
   const { user } = useAuth();
   const [error, setError] = useState(null);
@@ -188,7 +189,8 @@ const FileMessage = ({
               e.target.src = '/images/placeholder-image.png';
               setError('이미지를 불러올 수 없습니다.');
             }}
-            loading="lazy"
+            loading={isLatestFile ? 'eager' : 'lazy'}
+            fetchPriority={isLatestFile ? 'high' : 'auto'}
             data-testid="file-image-preview"
           />
         </div>
