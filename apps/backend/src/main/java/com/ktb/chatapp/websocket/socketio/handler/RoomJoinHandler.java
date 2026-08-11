@@ -3,8 +3,6 @@ package com.ktb.chatapp.websocket.socketio.handler;
 import com.corundumstudio.socketio.SocketIOClient;
 import com.corundumstudio.socketio.SocketIOServer;
 import com.corundumstudio.socketio.annotation.OnEvent;
-import com.ktb.chatapp.dto.FetchMessagesRequest;
-import com.ktb.chatapp.dto.FetchMessagesResponse;
 import com.ktb.chatapp.dto.JoinRoomSuccessResponse;
 import com.ktb.chatapp.dto.UserResponse;
 import com.ktb.chatapp.metrics.ChatRoomMetrics;
@@ -42,7 +40,7 @@ public class RoomJoinHandler {
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;
     private final UserRooms userRooms;
-    private final MessageLoader messageLoader;
+    private final InitialMessageLoadService initialMessageLoadService;
     private final MessageResponseMapper messageResponseMapper;
     private final RoomLeaveHandler roomLeaveHandler;
     private final ChatRoomMetrics chatRoomMetrics;
@@ -104,21 +102,21 @@ public class RoomJoinHandler {
 
             joinMessage = messageRepository.save(joinMessage);
 
-            // 초기 메시지 로드
-            FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
-            FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
-
             List<UserResponse> participants = getParticipantResponses(room);
             
             JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
                 .roomId(roomId)
                 .participants(participants)
-                .messages(messageLoadResult.getMessages())
-                .hasMore(messageLoadResult.isHasMore())
+                .messages(Collections.emptyList())
+                .hasMore(false)
                 .activeStreams(Collections.emptyList())
+                .initialMessagesPending(true)
                 .build();
 
             client.sendEvent(JOIN_ROOM_SUCCESS, response);
+
+            // 초기 메시지 조회는 입장 성공 응답 이후 bounded executor에서 처리한다.
+            initialMessageLoadService.loadAndSend(client, roomId, userId);
 
             // 입장 메시지 브로드캐스트
             socketIOServer.getRoomOperations(roomId)
@@ -128,8 +126,8 @@ public class RoomJoinHandler {
             socketIOServer.getRoomOperations(roomId)
                 .sendEvent(PARTICIPANTS_UPDATE, participants);
 
-            log.info("User {} joined room {} successfully. Message count: {}, hasMore: {}",
-                userName, roomId, messageLoadResult.getMessages().size(), messageLoadResult.isHasMore());
+            log.info("User {} joined room {} successfully. Initial messages loading asynchronously",
+                userName, roomId);
             metricStatus = "success";
 
         } catch (Exception e) {
