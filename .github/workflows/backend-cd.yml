@@ -99,7 +99,7 @@ jobs:
       - name: Rolling deploy (한 대씩 → 헬스체크 통과 후 다음 서버)
         env:
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-          DEPLOY_HOSTS: ${{ secrets.DEPLOY_HOSTS }}
+          DEPLOY_HOSTS: ${{ vars.DEPLOY_HOSTS }}
           ENV_FILE_PATH: /home/ubuntu/ktb-chat-backend/.env
         run: |
           set -euo pipefail
