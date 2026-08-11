@@ -1,6 +1,9 @@
 name: Backend CI
 
 # apps/backend가 바뀐 PR/브랜치에서만 돈다 (모노레포라 프론트 변경엔 반응 안 함).
+# main push는 일부러 제외 — backend-cd.yml의 test job이 이미 같은 테스트를 돌린다.
+# GitHub UI(Actions 탭 → Run workflow)로 임의 브랜치에서 수동 실행하고 싶을 때는
+# workflow_dispatch를 쓴다.
 on:
   pull_request:
     paths:
@@ -12,6 +15,7 @@ on:
     paths:
       - "apps/backend/**"
       - ".github/workflows/backend-ci.yml"
+  workflow_dispatch: {}
 
 concurrency:
   group: backend-ci-${{ github.ref }}
@@ -91,4 +95,4 @@ jobs:
           name: backend-jar-${{ github.sha }}
           path: apps/backend/target/ktb-chat-backend-0.0.1-SNAPSHOT.jar
           retention-days: 7
-          
+
