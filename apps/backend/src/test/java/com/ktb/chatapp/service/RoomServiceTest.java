@@ -1,6 +1,6 @@
 package com.ktb.chatapp.service;
 
-import com.ktb.chatapp.event.RoomCreatedEvent;
+import com.ktb.chatapp.event.RoomUpdatedEvent;
 import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
@@ -8,9 +8,11 @@ import com.ktb.chatapp.repository.UserRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.context.ApplicationEventPublisher;
@@ -57,6 +59,37 @@ class RoomServiceTest {
         assertThat(result.getData()).extracting("recentMessageCount").containsExactly(7, 3);
         verify(userRepository).findAllById(Set.of("creator-1", "creator-2", "user-1", "user-2"));
         verify(recentMessageCounter).countRecentMessages(List.of("room-1", "room-2"));
+        verify(userRepository, never()).findById(anyString());
+        verify(recentMessageCounter, never()).countRecentMessages(anyString());
+    }
+
+    @Test
+    void joinRoom_shouldReuseResponseForEventAndHttpCaller() {
+        Room room = room("room-1", "creator-1", Set.of("creator-1", "user-1"), 1);
+        User creator = user("creator-1");
+        User participant = user("user-1");
+
+        when(roomRepository.findById("room-1")).thenReturn(Optional.of(room));
+        when(userRepository.findByEmail("user@example.com")).thenReturn(Optional.of(participant));
+        when(userRepository.findAllById(Set.of("creator-1", "user-1")))
+                .thenReturn(List.of(creator, participant));
+        when(recentMessageCounter.countRecentMessages(List.of("room-1")))
+                .thenReturn(Map.of("room-1", 3));
+
+        var result = new RoomService(
+                roomRepository,
+                userRepository,
+                recentMessageCounter,
+                passwordEncoder,
+                eventPublisher
+        ).joinRoom("room-1", null, "user@example.com");
+
+        assertThat(result.getId()).isEqualTo("room-1");
+        ArgumentCaptor<RoomUpdatedEvent> eventCaptor = ArgumentCaptor.forClass(RoomUpdatedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().getRoomResponse()).isSameAs(result);
+        verify(userRepository).findAllById(Set.of("creator-1", "user-1"));
+        verify(recentMessageCounter).countRecentMessages(List.of("room-1"));
         verify(userRepository, never()).findById(anyString());
         verify(recentMessageCounter, never()).countRecentMessages(anyString());
     }
