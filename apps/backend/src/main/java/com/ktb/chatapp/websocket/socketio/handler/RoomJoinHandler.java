@@ -61,13 +61,10 @@ public class RoomJoinHandler {
                 return;
             }
             
-            if (userRepository.findById(userId).isEmpty()) {
-                metricStatus = "user_not_found";
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "User not found"));
-                return;
-            }
-            
-            if (roomRepository.findById(roomId).isEmpty()) {
+            // SocketUser는 AuthTokenListenerImpl에서 JWT와 사용자 존재를 검증한 뒤 주입된다.
+            // 여기서 같은 사용자를 다시 단건 조회하지 않고, 참가자 응답을 만들 때의 batch 조회를 재사용한다.
+            Room room = roomRepository.findById(roomId).orElse(null);
+            if (room == null) {
                 metricStatus = "room_not_found";
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
@@ -82,7 +79,13 @@ public class RoomJoinHandler {
                 return;
             }
 
-            roomRepository.addParticipant(roomId, userId);
+            // 참가자 추가 결과로 반환된 최신 Room을 재사용해 입장 후 재조회하지 않는다.
+            room = roomRepository.addParticipantAndReturn(roomId, userId).orElse(null);
+            if (room == null) {
+                metricStatus = "room_not_found";
+                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
+                return;
+            }
 
             // Join socket room and add to user's room set
             client.joinRoom(roomId);
@@ -105,15 +108,7 @@ public class RoomJoinHandler {
             FetchMessagesRequest req = new FetchMessagesRequest(roomId, 30, null);
             FetchMessagesResponse messageLoadResult = messageLoader.loadMessages(req, userId);
 
-            // 업데이트된 room 다시 조회하여 최신 participantIds 가져오기
-            Optional<Room> roomOpt = roomRepository.findById(roomId);
-            if (roomOpt.isEmpty()) {
-                metricStatus = "room_not_found";
-                client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
-                return;
-            }
-
-            List<UserResponse> participants = getParticipantResponses(roomOpt.get());
+            List<UserResponse> participants = getParticipantResponses(room);
             
             JoinRoomSuccessResponse response = JoinRoomSuccessResponse.builder()
                 .roomId(roomId)
