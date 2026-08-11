@@ -51,18 +51,7 @@ public class FileUtil {
             throw new RuntimeException("파일이 비어있습니다.");
         }
 
-        validateUploadMetadata(file.getOriginalFilename(), file.getContentType(), file.getSize());
-    }
-
-    /**
-     * Presigned PUT은 서버가 파일 바이트를 받지 않으므로, 기존 multipart 검증 중 메타데이터로
-     * 판단 가능한 규칙을 별도로 재사용한다. 실제 업로드 완료 여부는 스토리지 HEAD 요청으로 확인한다.
-     */
-    public static void validateUploadMetadata(String originalFilename, String contentType, long size) {
-        if (size <= 0) {
-            throw new RuntimeException("파일이 비어있습니다.");
-        }
-
+        String originalFilename = file.getOriginalFilename();
         if (originalFilename == null || originalFilename.trim().isEmpty()) {
             throw new RuntimeException("파일명이 올바르지 않습니다.");
         }
@@ -74,6 +63,7 @@ public class FileUtil {
         }
 
         // MIME 타입 검증
+        String contentType = file.getContentType();
         if (contentType == null || !ALLOWED_TYPES.containsKey(contentType)) {
             throw new RuntimeException("지원하지 않는 파일 형식입니다.");
         }
@@ -90,7 +80,7 @@ public class FileUtil {
         String type = contentType.split("/")[0];
         long limit = FILE_SIZE_LIMITS.getOrDefault(type, FILE_SIZE_LIMITS.get("application"));
         
-        if (size > limit) {
+        if (file.getSize() > limit) {
             int limitInMB = (int) (limit / 1024 / 1024);
             String fileType = getFileType(contentType);
             throw new RuntimeException(fileType + " 파일은 " + limitInMB + "MB를 초과할 수 없습니다.");

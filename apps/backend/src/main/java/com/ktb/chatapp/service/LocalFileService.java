@@ -6,8 +6,6 @@ import com.ktb.chatapp.storage.StorageKey;
 import com.ktb.chatapp.storage.StoragePort;
 import com.ktb.chatapp.util.FileUtil;
 import java.io.IOException;
-import java.net.URI;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,8 +15,6 @@ import org.springframework.web.multipart.MultipartFile;
 @Slf4j
 @Service
 public class LocalFileService implements FileService {
-
-    private static final Duration DIRECT_UPLOAD_URL_TTL = Duration.ofMinutes(5);
 
     private final StoragePort storagePort;
     private final FileRepository fileRepository;
@@ -105,53 +101,6 @@ public class LocalFileService implements FileService {
             log.error("파일 저장 실패: {}", ex.getMessage(), ex);
             throw new RuntimeException("파일 저장에 실패했습니다: " + ex.getMessage(), ex);
         }
-    }
-
-    @Override
-    public DirectFileUploadResult prepareDirectUpload(
-            String originalFilename, String contentType, long size, String uploaderId) {
-        FileUtil.validateUploadMetadata(originalFilename, contentType, size);
-
-        String cleanedFilename = StringUtils.cleanPath(originalFilename);
-        String safeFileName = FileUtil.generateSafeFileName(cleanedFilename);
-        String key = StorageKey.chat(safeFileName);
-        URI uploadUrl = storagePort.directUploadUrl(key, contentType, size, DIRECT_UPLOAD_URL_TTL)
-                .orElse(null);
-
-        if (uploadUrl == null) {
-            return DirectFileUploadResult.builder().directUpload(false).build();
-        }
-
-        File savedFile = fileRepository.save(File.builder()
-                .filename(safeFileName)
-                .originalname(FileUtil.normalizeOriginalFilename(cleanedFilename))
-                .mimetype(contentType)
-                .size(size)
-                .path(key)
-                .user(uploaderId)
-                .uploadDate(LocalDateTime.now())
-                .build());
-
-        log.info("파일 직접 업로드 URL 발급: {}", safeFileName);
-        return DirectFileUploadResult.builder()
-                .directUpload(true)
-                .uploadUrl(uploadUrl)
-                .file(savedFile)
-                .build();
-    }
-
-    @Override
-    public FileUploadResult completeDirectUpload(String fileId, String uploaderId) {
-        File fileEntity = fileRepository.findById(fileId)
-                .orElseThrow(() -> new RuntimeException("파일을 찾을 수 없습니다."));
-        if (!fileEntity.getUser().equals(uploaderId)) {
-            throw new RuntimeException("파일 업로드를 완료할 권한이 없습니다.");
-        }
-        if (!storagePort.exists(fileEntity.getPath())) {
-            throw new RuntimeException("S3 업로드가 완료되지 않았습니다.");
-        }
-
-        return FileUploadResult.builder().success(true).file(fileEntity).build();
     }
 
     @Override
