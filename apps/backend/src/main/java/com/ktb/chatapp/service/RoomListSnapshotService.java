@@ -29,7 +29,8 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class RoomListSnapshotService {
 
-    public static final String ROOMS_CACHE = "rooms:v3";
+    // v4 starts a clean namespace after the RoomResponse Redis serialization format changed.
+    public static final String ROOMS_CACHE = "rooms:v4";
 
     private final RoomRepository roomRepository;
     private final UserRepository userRepository;

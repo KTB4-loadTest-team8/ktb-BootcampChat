@@ -1,8 +1,12 @@
 package com.ktb.chatapp.config;
 
 import java.time.Duration;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.Cache;
 import org.springframework.cache.annotation.EnableCaching;
+import org.springframework.cache.annotation.CachingConfigurer;
+import org.springframework.cache.interceptor.CacheErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.cache.RedisCacheConfiguration;
@@ -21,7 +25,8 @@ import org.springframework.data.redis.core.RedisTemplate;
  */
 @Configuration
 @EnableCaching
-public class RedisCacheConfig {
+@Slf4j
+public class RedisCacheConfig implements CachingConfigurer {
 
     @Value("${app.cache.rooms.ttl-seconds:10}")
     private long roomsCacheTtlSeconds;
@@ -66,5 +71,50 @@ public class RedisCacheConfig {
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(cacheConfiguration)
                 .build();
+    }
+
+    /**
+     * A stale cache entry must not turn a read-only API request into a 500.
+     * Spring treats a swallowed cache-read failure as a cache miss, so the
+     * underlying service reloads the value from MongoDB and stores a fresh one.
+     */
+    @Override
+    @Bean
+    public CacheErrorHandler errorHandler() {
+        return new CacheErrorHandler() {
+            @Override
+            public void handleCacheGetError(RuntimeException exception, Cache cache, Object key) {
+                log.warn("Redis cache read failed; reloading from source. cache={}, key={}",
+                        cache.getName(), key, exception);
+                evictBrokenEntry(cache, key);
+            }
+
+            @Override
+            public void handleCachePutError(
+                    RuntimeException exception, Cache cache, Object key, Object value
+            ) {
+                log.warn("Redis cache write failed; serving uncached response. cache={}, key={}",
+                        cache.getName(), key, exception);
+            }
+
+            @Override
+            public void handleCacheEvictError(RuntimeException exception, Cache cache, Object key) {
+                log.warn("Redis cache eviction failed. cache={}, key={}", cache.getName(), key, exception);
+            }
+
+            @Override
+            public void handleCacheClearError(RuntimeException exception, Cache cache) {
+                log.warn("Redis cache clear failed. cache={}", cache.getName(), exception);
+            }
+
+            private void evictBrokenEntry(Cache cache, Object key) {
+                try {
+                    cache.evict(key);
+                } catch (RuntimeException evictionException) {
+                    log.warn("Could not remove broken Redis cache entry. cache={}, key={}",
+                            cache.getName(), key, evictionException);
+                }
+            }
+        };
     }
 }
