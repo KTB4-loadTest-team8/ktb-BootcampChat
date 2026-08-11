@@ -13,6 +13,8 @@ import com.ktb.chatapp.websocket.socketio.ChatDataStore;
 import com.ktb.chatapp.websocket.socketio.LocalChatDataStore;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import java.util.Arrays;
+import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.config.BeanPostProcessor;
@@ -54,6 +56,9 @@ public class SocketIOConfig {
     @Value("${spring.data.redis.port:6379}")
     private int redisPort;
 
+    @Value("${spring.data.redis.cluster.nodes:}")
+    private String redisClusterNodes;
+
     @Value("${spring.data.redis.password:}")
     private String redisPassword;
 
@@ -65,11 +70,21 @@ public class SocketIOConfig {
     @ConditionalOnProperty(name = "socketio.redis.enabled", havingValue = "true")
     public RedissonClient socketIORedissonClient() {
         Config config = new Config();
-        var singleServer = config.useSingleServer()
-                .setAddress("redis://" + redisHost + ":" + redisPort);
-
-        if (StringUtils.hasText(redisPassword)) {
-            singleServer.setPassword(redisPassword);
+        List<String> clusterAddresses = redisClusterAddresses();
+        if (clusterAddresses.isEmpty()) {
+            var singleServer = config.useSingleServer()
+                    .setAddress("redis://" + redisHost + ":" + redisPort);
+            if (StringUtils.hasText(redisPassword)) {
+                singleServer.setPassword(redisPassword);
+            }
+            log.info("Socket.IO Redis store using standalone Redis at {}:{}", redisHost, redisPort);
+        } else {
+            var clusterServers = config.useClusterServers()
+                    .addNodeAddress(clusterAddresses.toArray(String[]::new));
+            if (StringUtils.hasText(redisPassword)) {
+                clusterServers.setPassword(redisPassword);
+            }
+            log.info("Socket.IO Redis store using Redis Cluster seed nodes: {}", clusterAddresses);
         }
 
         return Redisson.create(config);
@@ -104,7 +119,7 @@ public class SocketIOConfig {
         RedissonClient redissonClient = redissonClientProvider.getIfAvailable();
         if (redisStoreEnabled && redissonClient != null) {
             config.setStoreFactory(new RedissonStoreFactory(redissonClient));
-            log.info("Socket.IO Redis store enabled at {}:{}", redisHost, redisPort);
+            log.info("Socket.IO Redis store enabled");
         } else {
             config.setStoreFactory(new MemoryStoreFactory());
             log.warn("Socket.IO is using an in-memory store; cross-node broadcasts are disabled");
@@ -124,6 +139,25 @@ public class SocketIOConfig {
         });
         
         return socketIOServer;
+    }
+
+    private List<String> redisClusterAddresses() {
+        if (!StringUtils.hasText(redisClusterNodes)) {
+            return List.of();
+        }
+
+        return Arrays.stream(redisClusterNodes.split(","))
+                .map(String::trim)
+                .filter(StringUtils::hasText)
+                .map(this::toRedisAddress)
+                .toList();
+    }
+
+    private String toRedisAddress(String node) {
+        if (node.startsWith("redis://") || node.startsWith("rediss://")) {
+            return node;
+        }
+        return "redis://" + node;
     }
     
     /**
