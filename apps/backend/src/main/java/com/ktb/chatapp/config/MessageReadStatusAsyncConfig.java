@@ -1,7 +1,7 @@
 package com.ktb.chatapp.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ThreadPoolExecutor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,6 +18,12 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 @EnableAsync
 public class MessageReadStatusAsyncConfig {
 
+    private final MeterRegistry meterRegistry;
+
+    public MessageReadStatusAsyncConfig(MeterRegistry meterRegistry) {
+        this.meterRegistry = meterRegistry;
+    }
+
     @Bean(name = "messageReadStatusTaskExecutor")
     public Executor messageReadStatusTaskExecutor(
             @Value("${chat.message-read-status.executor.core-pool-size:2}") int corePoolSize,
@@ -29,10 +35,9 @@ public class MessageReadStatusAsyncConfig {
         executor.setMaxPoolSize(maxPoolSize);
         executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("message-read-");
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(10);
-        executor.initialize();
+        BoundedExecutorMetrics.configure(executor, "message-read-status", meterRegistry);
         return executor;
     }
 
@@ -47,10 +52,9 @@ public class MessageReadStatusAsyncConfig {
         executor.setMaxPoolSize(maxPoolSize);
         executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("chat-room-load-");
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(10);
-        executor.initialize();
+        BoundedExecutorMetrics.configure(executor, "chat-room-initial-load", meterRegistry);
         return executor;
     }
 
@@ -65,10 +69,9 @@ public class MessageReadStatusAsyncConfig {
         executor.setMaxPoolSize(maxPoolSize);
         executor.setQueueCapacity(queueCapacity);
         executor.setThreadNamePrefix("chat-room-post-join-");
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(10);
-        executor.initialize();
+        BoundedExecutorMetrics.configure(executor, "chat-room-post-join", meterRegistry);
         return executor;
     }
 }
