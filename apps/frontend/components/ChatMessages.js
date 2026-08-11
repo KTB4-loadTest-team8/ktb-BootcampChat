@@ -20,6 +20,7 @@ const MessageRow = React.memo(({
   room,
   onReactionAdd,
   onReactionRemove,
+  isLatestFile = false,
 }) => {
   if (!msg) return null;
 
@@ -35,7 +36,7 @@ const MessageRow = React.memo(({
   return (
     <div
       data-read-message-id={msg.type !== 'system' ? msg._id : undefined}
-      style={MESSAGE_WRAPPER_STYLE}
+      style={isLatestFile ? { contentVisibility: 'visible' } : MESSAGE_WRAPPER_STYLE}
     >
       <MessageComponent
         currentUser={currentUser}
@@ -44,6 +45,7 @@ const MessageRow = React.memo(({
         onReactionRemove={onReactionRemove}
         msg={msg}
         content={msg.content}
+        isLatestFile={isLatestFile}
         isMine={msg.type !== 'system' ? isMine : undefined}
         isStreaming={msg.type === 'ai' ? (msg.isStreaming || false) : undefined}
       />
@@ -102,8 +104,11 @@ const ChatMessages = ({
     100 // 하단 100px 이내면 자동 스크롤
   );
   const currentUserId = currentUser?._id || currentUser?.id;
-
   const allMessages = Array.isArray(messages) ? messages : [];
+  const latestFileIndex = allMessages.reduce(
+    (latestIndex, message, index) => (message?.type === 'file' ? index : latestIndex),
+    -1
+  );
 
   useReadReceiptBatching({
     containerRef,
@@ -158,6 +163,7 @@ const ChatMessages = ({
             room={room}
             onReactionAdd={onReactionAdd}
             onReactionRemove={onReactionRemove}
+            isLatestFile={idx === latestFileIndex}
           />
         ))
       )}
