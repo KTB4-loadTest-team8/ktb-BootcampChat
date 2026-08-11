@@ -9,6 +9,7 @@ import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.RoomListSnapshotService;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import io.micrometer.core.instrument.Timer;
@@ -35,6 +36,7 @@ public class RoomJoinHandler {
     private final UserRooms userRooms;
     private final RoomJoinPostProcessService roomJoinPostProcessService;
     private final ChatRoomMetrics chatRoomMetrics;
+    private final RoomListSnapshotService roomListSnapshotService;
     
     @OnEvent(JOIN_ROOM)
     public void handleJoinRoom(SocketIOClient client, String roomId) {
@@ -58,7 +60,6 @@ public class RoomJoinHandler {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
-            
             // 이미 해당 방에 참여 중인지 확인
             if (userRooms.isInRoom(userId, roomId)) {
                 log.debug("User {} already in room {}", userId, roomId);
@@ -75,6 +76,7 @@ public class RoomJoinHandler {
                 client.sendEvent(JOIN_ROOM_ERROR, Map.of("message", "채팅방을 찾을 수 없습니다."));
                 return;
             }
+            roomListSnapshotService.evictParticipantSnapshots();
 
             // Join socket room and add to user's room set
             client.joinRoom(roomId);

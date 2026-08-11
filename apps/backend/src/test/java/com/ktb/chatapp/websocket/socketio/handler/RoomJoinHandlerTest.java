@@ -7,6 +7,7 @@ import com.ktb.chatapp.model.Room;
 import com.ktb.chatapp.model.User;
 import com.ktb.chatapp.repository.RoomRepository;
 import com.ktb.chatapp.repository.UserRepository;
+import com.ktb.chatapp.service.RoomListSnapshotService;
 import com.ktb.chatapp.websocket.socketio.SocketUser;
 import com.ktb.chatapp.websocket.socketio.UserRooms;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -38,6 +39,7 @@ class RoomJoinHandlerTest {
     @Mock private UserRepository userRepository;
     @Mock private UserRooms userRooms;
     @Mock private RoomJoinPostProcessService roomJoinPostProcessService;
+    @Mock private RoomListSnapshotService roomListSnapshotService;
     @Mock private SocketIOClient client;
 
     private RoomJoinHandler handler;
@@ -51,7 +53,8 @@ class RoomJoinHandlerTest {
                 userRepository,
                 userRooms,
                 roomJoinPostProcessService,
-                new ChatRoomMetrics(meterRegistry));
+                new ChatRoomMetrics(meterRegistry),
+                roomListSnapshotService);
     }
 
     @Test

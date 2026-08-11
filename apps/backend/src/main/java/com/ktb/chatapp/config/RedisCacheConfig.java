@@ -1,6 +1,7 @@
 package com.ktb.chatapp.config;
 
 import java.time.Duration;
+import java.util.Map;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
@@ -30,6 +31,9 @@ public class RedisCacheConfig implements CachingConfigurer {
 
     @Value("${app.cache.rooms.ttl-seconds:10}")
     private long roomsCacheTtlSeconds;
+
+    @Value("${app.cache.socket-user.ttl-seconds:300}")
+    private long socketUserCacheTtlSeconds;
 
     @Bean
     public GenericJacksonJsonRedisSerializer redisValueSerializer() {
@@ -68,8 +72,14 @@ public class RedisCacheConfig implements CachingConfigurer {
                 .serializeValuesWith(RedisSerializationContext.SerializationPair
                         .fromSerializer(redisValueSerializer));
 
+        var socketUserCacheConfiguration = cacheConfiguration
+                .entryTtl(Duration.ofSeconds(socketUserCacheTtlSeconds));
+
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(cacheConfiguration)
+                .withInitialCacheConfigurations(Map.of(
+                        com.ktb.chatapp.service.SocketUserLookupService.SOCKET_USER_CACHE,
+                        socketUserCacheConfiguration))
                 .build();
     }
 
