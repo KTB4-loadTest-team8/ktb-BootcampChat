@@ -119,12 +119,32 @@ jobs:
               --env-file $ENV_FILE_PATH \
               $IMAGE:$TAG"
 
-            # 최대 60초(2초 간격) 헬스체크 — app-control.sh의 wait_for_health와 동일한 타임아웃
-            $ssh_cmd "for i in \$(seq 1 30); do \
-                curl -sf http://localhost:5001/api/health > /dev/null 2>&1 && exit 0; \
-                sleep 2; \
-              done; \
-              echo 'health check timed out'; exit 1"
+            # 최대 60초(2초 간격) readiness 체크. /api/health는 프로세스 생존만
+            # 확인하므로, MongoDB/Redis 의존성까지 반영하는 Actuator 상태를 확인한다.
+            health_check_cmd='for i in $(seq 1 30); do
+                if command -v curl >/dev/null 2>&1; then
+                  curl -fsS http://localhost:5001/actuator/health | grep -q "\"status\":\"UP\"" && exit 0
+                elif command -v wget >/dev/null 2>&1; then
+                  wget -qO- http://localhost:5001/actuator/health | grep -q "\"status\":\"UP\"" && exit 0
+                else
+                  echo "Neither curl nor wget is available" >&2
+                  exit 2
+                fi
+                sleep 2
+              done
+              echo "readiness check timed out" >&2
+              exit 1'
+
+            if ! $ssh_cmd "$health_check_cmd"; then
+              echo "❌ $host readiness check failed; collecting container diagnostics"
+              diagnostics_cmd='echo "--- container state ---"
+                docker ps -a --filter name=ktb-chat-backend
+                docker inspect -f "status={{.State.Status}} exit={{.State.ExitCode}} error={{.State.Error}}" ktb-chat-backend 2>&1 || true
+                echo "--- container logs (last 200 lines) ---"
+                docker logs --tail 200 ktb-chat-backend 2>&1 || true'
+              $ssh_cmd "$diagnostics_cmd" || true
+              exit 1
+            fi
 
             echo "✅ $host healthy"
             echo "::endgroup::"
